@@ -43,6 +43,9 @@ const io = new Server(httpServer, {
 // Делаем io доступным во всех роутах через app.locals
 app.locals.io = io;
 
+// Доверяем proxy Railway/Heroku для корректной работы rate-limit
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(helmet({
   crossOriginResourcePolicy: false, // разрешаем Flutter/мобильным клиентам
