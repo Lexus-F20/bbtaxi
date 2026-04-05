@@ -1,4 +1,4 @@
-// Роут авторизации: вход по телефону и паролю
+// Роут авторизации: вход по логину и паролю
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -8,61 +8,53 @@ const router = express.Router();
 
 /**
  * POST /auth/login
- * Вход пользователя по номеру телефона и паролю.
- * Возвращает JWT токен и данные пользователя.
- *
- * Body: { phone: string, password: string }
+ * Вход пользователя по логину и паролю.
+ * Body: { login: string, password: string }
  */
 router.post('/login', async (req, res) => {
   try {
-    const { phone, password } = req.body;
+    const { login, password } = req.body;
 
-    // Валидация входных данных
-    if (!phone || !password) {
-      return res.status(400).json({ error: 'Телефон и пароль обязательны' });
+    if (!login || !password) {
+      return res.status(400).json({ error: 'Логин и пароль обязательны' });
     }
 
-    // Ищем пользователя по номеру телефона
     const result = await pool.query(
-      'SELECT id, phone, name, password_hash, role, is_active, fcm_token FROM users WHERE phone = $1',
-      [phone]
+      'SELECT id, login, name, password_hash, role, is_active, fcm_token FROM users WHERE login = $1',
+      [login]
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Неверный телефон или пароль' });
+      return res.status(401).json({ error: 'Неверный логин или пароль' });
     }
 
     const user = result.rows[0];
 
-    // Проверяем, не заблокирован ли пользователь
     if (!user.is_active) {
       return res.status(403).json({ error: 'Ваш аккаунт заблокирован. Обратитесь к администратору' });
     }
 
-    // Проверяем правильность пароля
     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
     if (!isPasswordValid) {
-      return res.status(401).json({ error: 'Неверный телефон или пароль' });
+      return res.status(401).json({ error: 'Неверный логин или пароль' });
     }
 
-    // Создаём JWT токен
     const token = jwt.sign(
       {
         id: user.id,
-        phone: user.phone,
+        login: user.login,
         name: user.name,
         role: user.role,
       },
       process.env.JWT_SECRET,
-      { expiresIn: '7d' } // Токен действителен 7 дней
+      { expiresIn: '7d' }
     );
 
-    // Возвращаем токен и данные пользователя (без хэша пароля)
     return res.json({
       token,
       user: {
         id: user.id,
-        phone: user.phone,
+        login: user.login,
         name: user.name,
         role: user.role,
         fcmToken: user.fcm_token,
@@ -76,10 +68,7 @@ router.post('/login', async (req, res) => {
 
 /**
  * POST /auth/update-fcm-token
- * Обновляет FCM токен пользователя для push-уведомлений.
- * Вызывается мобильным приложением после входа.
- *
- * Body: { userId: number, fcmToken: string }
+ * Body: { fcmToken: string }
  * Headers: Authorization: Bearer <token>
  */
 router.post('/update-fcm-token', require('../middleware/auth').authenticateToken, async (req, res) => {
@@ -91,7 +80,6 @@ router.post('/update-fcm-token', require('../middleware/auth').authenticateToken
       return res.status(400).json({ error: 'FCM токен обязателен' });
     }
 
-    // Обновляем FCM токен в базе данных
     await pool.query(
       'UPDATE users SET fcm_token = $1 WHERE id = $2',
       [fcmToken, userId]
@@ -106,14 +94,12 @@ router.post('/update-fcm-token', require('../middleware/auth').authenticateToken
 
 /**
  * PUT /auth/profile
- * Обновляет профиль текущего пользователя (имя, телефон, пароль).
- *
- * Body: { name?, phone?, password? }
+ * Body: { name?, login?, password? }
  * Headers: Authorization: Bearer <token>
  */
 router.put('/profile', require('../middleware/auth').authenticateToken, async (req, res) => {
   try {
-    const { name, phone, password } = req.body;
+    const { name, login, password } = req.body;
     const userId = req.user.id;
 
     const updates = [];
@@ -124,16 +110,16 @@ router.put('/profile', require('../middleware/auth').authenticateToken, async (r
       params.push(name.trim());
     }
 
-    if (phone && phone.trim()) {
-      const phoneCheck = await pool.query(
-        'SELECT id FROM users WHERE phone = $1 AND id != $2',
-        [phone.trim(), userId]
+    if (login && login.trim()) {
+      const loginCheck = await pool.query(
+        'SELECT id FROM users WHERE login = $1 AND id != $2',
+        [login.trim(), userId]
       );
-      if (phoneCheck.rows.length > 0) {
-        return res.status(400).json({ error: 'Этот телефон уже используется' });
+      if (loginCheck.rows.length > 0) {
+        return res.status(400).json({ error: 'Этот логин уже используется' });
       }
-      updates.push(`phone = $${params.length + 1}`);
-      params.push(phone.trim());
+      updates.push(`login = $${params.length + 1}`);
+      params.push(login.trim());
     }
 
     if (password && password.trim()) {
@@ -151,7 +137,7 @@ router.put('/profile', require('../middleware/auth').authenticateToken, async (r
 
     params.push(userId);
     const result = await pool.query(
-      `UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length} RETURNING id, phone, name, role`,
+      `UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length} RETURNING id, login, name, role`,
       params
     );
 

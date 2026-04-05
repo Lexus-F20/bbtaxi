@@ -6,50 +6,41 @@ const { requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Все роуты в этом файле требуют роли администратора
 router.use(requireAdmin);
 
 /**
  * POST /admin/users
- * Создать нового пользователя (только администратор).
- * Самостоятельная регистрация отключена — только через админ-панель.
- *
- * Body: { name, phone, password, role }
+ * Body: { name, login, password, role }
  */
 router.post('/users', async (req, res) => {
   try {
-    const { name, phone, password, role } = req.body;
+    const { name, login, password, role } = req.body;
 
-    // Валидация обязательных полей
-    if (!name || !phone || !password || !role) {
-      return res.status(400).json({ error: 'Имя, телефон, пароль и роль обязательны' });
+    if (!name || !login || !password || !role) {
+      return res.status(400).json({ error: 'Имя, логин, пароль и роль обязательны' });
     }
 
-    // Проверяем допустимые роли
     const allowedRoles = ['admin', 'driver', 'viewer'];
     if (!allowedRoles.includes(role)) {
-      return res.status(400).json({ error: 'Роль должна быть: admin, driver или user' });
+      return res.status(400).json({ error: 'Роль должна быть: admin, driver или viewer' });
     }
 
-    // Проверяем, не существует ли уже пользователь с таким телефоном
     const existingUser = await pool.query(
-      'SELECT id FROM users WHERE phone = $1',
-      [phone]
+      'SELECT id FROM users WHERE login = $1',
+      [login]
     );
 
     if (existingUser.rows.length > 0) {
-      return res.status(409).json({ error: 'Пользователь с таким номером телефона уже существует' });
+      return res.status(409).json({ error: 'Пользователь с таким логином уже существует' });
     }
 
-    // Хэшируем пароль (соль 10 раундов)
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // Создаём пользователя в базе данных
     const result = await pool.query(
-      `INSERT INTO users (name, phone, password_hash, role, is_active)
+      `INSERT INTO users (name, login, password_hash, role, is_active)
        VALUES ($1, $2, $3, $4, true)
-       RETURNING id, name, phone, role, is_active, created_at`,
-      [name, phone, passwordHash, role]
+       RETURNING id, name, login, role, is_active, created_at`,
+      [name, login, passwordHash, role]
     );
 
     return res.status(201).json({
@@ -64,20 +55,17 @@ router.post('/users', async (req, res) => {
 
 /**
  * GET /admin/users
- * Получить список всех пользователей.
- * Поддерживает фильтрацию по роли: ?role=driver
  */
 router.get('/users', async (req, res) => {
   try {
     const { role } = req.query;
 
     let query = `
-      SELECT id, name, phone, role, is_active, fcm_token, created_at
+      SELECT id, name, login, role, is_active, fcm_token, created_at, rating
       FROM users
     `;
     const params = [];
 
-    // Если передана роль — фильтруем
     if (role) {
       query += ' WHERE role = $1';
       params.push(role);
@@ -96,16 +84,13 @@ router.get('/users', async (req, res) => {
 
 /**
  * PUT /admin/users/:id
- * Редактировать пользователя (имя, телефон, роль, пароль, статус).
- *
- * Body: { name?, phone?, password?, role?, is_active? }
+ * Body: { name?, login?, password?, role?, is_active? }
  */
 router.put('/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, phone, password, role, is_active } = req.body;
+    const { name, login, password, role, is_active } = req.body;
 
-    // Проверяем существование пользователя
     const existingResult = await pool.query(
       'SELECT id FROM users WHERE id = $1',
       [id]
@@ -115,7 +100,6 @@ router.put('/users/:id', async (req, res) => {
       return res.status(404).json({ error: 'Пользователь не найден' });
     }
 
-    // Формируем список полей для обновления
     const updateFields = [];
     const params = [];
     let paramIndex = 1;
@@ -125,17 +109,16 @@ router.put('/users/:id', async (req, res) => {
       params.push(name);
     }
 
-    if (phone !== undefined) {
-      // Проверяем, не занят ли телефон другим пользователем
-      const phoneCheck = await pool.query(
-        'SELECT id FROM users WHERE phone = $1 AND id != $2',
-        [phone, id]
+    if (login !== undefined) {
+      const loginCheck = await pool.query(
+        'SELECT id FROM users WHERE login = $1 AND id != $2',
+        [login, id]
       );
-      if (phoneCheck.rows.length > 0) {
-        return res.status(409).json({ error: 'Этот номер телефона уже используется' });
+      if (loginCheck.rows.length > 0) {
+        return res.status(409).json({ error: 'Этот логин уже используется' });
       }
-      updateFields.push(`phone = $${paramIndex++}`);
-      params.push(phone);
+      updateFields.push(`login = $${paramIndex++}`);
+      params.push(login);
     }
 
     if (password !== undefined) {
@@ -165,7 +148,7 @@ router.put('/users/:id', async (req, res) => {
     params.push(id);
     const result = await pool.query(
       `UPDATE users SET ${updateFields.join(', ')} WHERE id = $${paramIndex}
-       RETURNING id, name, phone, role, is_active, created_at`,
+       RETURNING id, name, login, role, is_active, created_at`,
       params
     );
 
@@ -181,21 +164,18 @@ router.put('/users/:id', async (req, res) => {
 
 /**
  * DELETE /admin/users/:id
- * Заблокировать пользователя (устанавливает is_active = false).
- * Физическое удаление не применяется для сохранения истории.
  */
 router.delete('/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Нельзя заблокировать самого себя
     if (String(req.user.id) === String(id)) {
       return res.status(400).json({ error: 'Нельзя заблокировать собственный аккаунт' });
     }
 
     const result = await pool.query(
       `UPDATE users SET is_active = false WHERE id = $1
-       RETURNING id, name, phone, role, is_active`,
+       RETURNING id, name, login, role, is_active`,
       [id]
     );
 
@@ -215,7 +195,6 @@ router.delete('/users/:id', async (req, res) => {
 
 /**
  * GET /admin/markers
- * Получить все маркеры для панели администратора (с данными пользователей).
  */
 router.get('/markers', async (req, res) => {
   try {
@@ -224,7 +203,7 @@ router.get('/markers', async (req, res) => {
     let query = `
       SELECT m.id, m.user_id, m.accepted_by, m.latitude, m.longitude, m.title, m.description,
              m.color, m.status, m.reject_reason, m.report, m.done_at, m.created_at,
-             u.name AS user_name, u.phone AS user_phone,
+             u.name AS user_name, u.login AS user_login,
              a.name AS accepted_by_name
       FROM markers m
       LEFT JOIN users u ON m.user_id = u.id
@@ -255,7 +234,6 @@ router.get('/markers', async (req, res) => {
 
 /**
  * PUT /admin/users/:id/rating
- * Изменить рейтинг пользователя (только администратор).
  * Body: { delta: number, reason?: string }
  */
 router.put('/users/:id/rating', async (req, res) => {
