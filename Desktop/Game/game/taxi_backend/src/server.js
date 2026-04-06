@@ -82,7 +82,7 @@ app.use('/upload', authenticateToken, uploadRoutes);
 
 // Проверка работоспособности сервера
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', version: '2.0-upload', timestamp: new Date().toISOString() });
 });
 
 // ========== SOCKET.IO ==========
