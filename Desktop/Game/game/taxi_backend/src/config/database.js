@@ -8,16 +8,8 @@ const publicUrl  = process.env.DATABASE_PUBLIC_URL;
 const privateUrl = process.env.DATABASE_URL;
 const dbUrl = publicUrl || privateUrl;
 
-let ssl;
-if (!dbUrl) {
-  ssl = false;
-} else if (publicUrl && dbUrl === publicUrl) {
-  ssl = { rejectUnauthorized: false }; // публичный — SSL обязателен
-} else if (dbUrl.includes('.railway.internal')) {
-  ssl = false; // приватная сеть Railway — без SSL
-} else {
-  ssl = { rejectUnauthorized: false }; // прочие — SSL мягкий
-}
+// Railway требует SSL для всех подключений (и публичных, и приватных)
+const ssl = dbUrl ? { rejectUnauthorized: false } : false;
 
 console.log('DB host:', dbUrl ? dbUrl.replace(/:([^:@]+)@/, ':***@').split('@')[1] : 'PG vars');
 console.log('DB ssl:', JSON.stringify(ssl));
