@@ -2,54 +2,53 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
-// Railway даёт два URL:
-//   DATABASE_URL        — приватный (.railway.internal), SSL НЕ нужен
-//   DATABASE_PUBLIC_URL — публичный (*.railway.app),     SSL нужен
 const privateUrl = process.env.DATABASE_URL;
 const publicUrl  = process.env.DATABASE_PUBLIC_URL;
+const dbUrl      = privateUrl || publicUrl;
 
-// Выбираем URL и настройку SSL
-let dbUrl, sslConfig;
-if (privateUrl && privateUrl.includes('.railway.internal')) {
-  // Приватная сеть Railway — без SSL
-  dbUrl = privateUrl;
-  sslConfig = false;
-} else if (privateUrl) {
-  // DATABASE_URL есть, но не internal — SSL с мягкой проверкой
-  dbUrl = privateUrl;
-  sslConfig = { rejectUnauthorized: false };
-} else if (publicUrl) {
-  // Публичный URL — SSL обязателен
-  dbUrl = publicUrl;
-  sslConfig = { rejectUnauthorized: false };
+// Логируем какой URL используется (без пароля)
+if (dbUrl) {
+  const safe = dbUrl.replace(/:([^:@]+)@/, ':***@');
+  const isInternal = dbUrl.includes('.railway.internal');
+  console.log(`DB URL: ${safe}`);
+  console.log(`DB internal: ${isInternal}`);
 } else {
-  dbUrl = null;
-  sslConfig = false;
+  console.log('DB URL не найден — используем PG* переменные');
+}
+
+// Определяем SSL:
+//   .railway.internal — приватная сеть, SSL не нужен
+//   всё остальное    — SSL с отключённой проверкой сертификата
+function getSsl(url) {
+  if (!url) return false;
+  if (url.includes('.railway.internal')) return false;
+  return { rejectUnauthorized: false };
 }
 
 const poolConfig = dbUrl
   ? {
       connectionString: dbUrl,
-      ssl: sslConfig,
+      ssl: getSsl(dbUrl),
       max: 20,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
     }
   : {
-      host: process.env.PGHOST || process.env.DB_HOST || 'localhost',
-      port: parseInt(process.env.PGPORT || process.env.DB_PORT) || 5432,
-      database: process.env.PGDATABASE || process.env.DB_NAME || 'taxi_db',
-      user: process.env.PGUSER || process.env.DB_USER || 'postgres',
+      host:     process.env.PGHOST     || process.env.DB_HOST     || 'localhost',
+      port:     parseInt(process.env.PGPORT     || process.env.DB_PORT)  || 5432,
+      database: process.env.PGDATABASE || process.env.DB_NAME     || 'taxi_db',
+      user:     process.env.PGUSER     || process.env.DB_USER     || 'postgres',
       password: process.env.PGPASSWORD || process.env.DB_PASSWORD || '',
-      ssl: false,
+      ssl: getSsl(process.env.PGHOST),
       max: 20,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
     };
 
+console.log('DB ssl config:', JSON.stringify(poolConfig.ssl));
+
 const pool = new Pool(poolConfig);
 
-// Проверяем подключение при старте
 pool.connect((err, client, release) => {
   if (err) {
     console.error('Ошибка подключения к PostgreSQL:', err.message);
