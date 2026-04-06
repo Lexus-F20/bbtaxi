@@ -2,50 +2,39 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
-const privateUrl = process.env.DATABASE_URL;
+// Предпочитаем DATABASE_PUBLIC_URL (публичный proxy, всегда SSL)
+// Если нет — используем DATABASE_URL (внутренний, без SSL на Railway)
 const publicUrl  = process.env.DATABASE_PUBLIC_URL;
-const dbUrl      = privateUrl || publicUrl;
+const privateUrl = process.env.DATABASE_URL;
+const dbUrl = publicUrl || privateUrl;
 
-// Логируем какой URL используется (без пароля)
-if (dbUrl) {
-  const safe = dbUrl.replace(/:([^:@]+)@/, ':***@');
-  const isInternal = dbUrl.includes('.railway.internal');
-  console.log(`DB URL: ${safe}`);
-  console.log(`DB internal: ${isInternal}`);
+let ssl;
+if (!dbUrl) {
+  ssl = false;
+} else if (publicUrl && dbUrl === publicUrl) {
+  ssl = { rejectUnauthorized: false }; // публичный — SSL обязателен
+} else if (dbUrl.includes('.railway.internal')) {
+  ssl = false; // приватная сеть Railway — без SSL
 } else {
-  console.log('DB URL не найден — используем PG* переменные');
+  ssl = { rejectUnauthorized: false }; // прочие — SSL мягкий
 }
 
-// Определяем SSL:
-//   .railway.internal — приватная сеть, SSL не нужен
-//   всё остальное    — SSL с отключённой проверкой сертификата
-function getSsl(url) {
-  if (!url) return false;
-  if (url.includes('.railway.internal')) return false;
-  return { rejectUnauthorized: false };
-}
+console.log('DB host:', dbUrl ? dbUrl.replace(/:([^:@]+)@/, ':***@').split('@')[1] : 'PG vars');
+console.log('DB ssl:', JSON.stringify(ssl));
 
 const poolConfig = dbUrl
-  ? {
-      connectionString: dbUrl,
-      ssl: getSsl(dbUrl),
-      max: 20,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
-    }
+  ? { connectionString: dbUrl, ssl, max: 20, idleTimeoutMillis: 30000, connectionTimeoutMillis: 5000 }
   : {
       host:     process.env.PGHOST     || process.env.DB_HOST     || 'localhost',
-      port:     parseInt(process.env.PGPORT     || process.env.DB_PORT)  || 5432,
+      port:     parseInt(process.env.PGPORT  || process.env.DB_PORT)  || 5432,
       database: process.env.PGDATABASE || process.env.DB_NAME     || 'taxi_db',
       user:     process.env.PGUSER     || process.env.DB_USER     || 'postgres',
       password: process.env.PGPASSWORD || process.env.DB_PASSWORD || '',
-      ssl: getSsl(process.env.PGHOST),
+      ssl: false,
       max: 20,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
     };
-
-console.log('DB ssl config:', JSON.stringify(poolConfig.ssl));
 
 const pool = new Pool(poolConfig);
 
