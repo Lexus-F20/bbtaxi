@@ -48,12 +48,6 @@ class _MapScreenState extends State<MapScreen> {
   // Последняя позиция камеры для сохранения
   CameraPosition? _lastCameraPosition;
 
-  // Локальная точка "Моя позиция" — не отправляется на сервер
-  LatLng? _myPositionPin;
-
-  // Режим ручной установки позиции (нажми на карту чтобы поставить метку)
-  bool _isPlacingPosition = false;
-
   // Кэш цветных иконок маркеров (работает на вебе и Android)
   final Map<String, BitmapDescriptor> _iconCache = {};
 
@@ -161,38 +155,10 @@ class _MapScreenState extends State<MapScreen> {
     await prefs.setDouble('map_zoom', pos.zoom);
   }
 
-  /// Входит/выходит из режима ручной установки позиции
-  void _markMyPosition() {
-    setState(() => _isPlacingPosition = !_isPlacingPosition);
-    if (_isPlacingPosition) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Нажмите на карту чтобы поставить свою метку'),
-          backgroundColor: Colors.blueAccent,
-          duration: Duration(seconds: 3),
-        ),
-      );
-    }
-  }
-
-  /// Обработчик тапа по карте — устанавливает позицию или добавляет точку маршрута
+  /// Обработчик тапа по карте — добавляет точку маршрута
   void _onMapTap(LatLng position) {
     if (_isDrawingRoute) {
       setState(() => _draftPoints.add(position));
-      return;
-    }
-    if (_isPlacingPosition) {
-      setState(() {
-        _myPositionPin = position;
-        _isPlacingPosition = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Метка: ${CoordinateUtils.formatCK42(position.latitude, position.longitude)}'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 2),
-        ),
-      );
     }
   }
 
@@ -207,7 +173,6 @@ class _MapScreenState extends State<MapScreen> {
       'purple':       Color(0xFF8E24AA),
       'pink':         Color(0xFFE91E63),
       '_accepted':    Color(0xFF43A047),
-      '_my_position': Color(0xFF00ACC1),
     };
     for (final entry in colorMap.entries) {
       _iconCache[entry.key] = await _renderMarkerIcon(entry.value);
@@ -324,16 +289,6 @@ class _MapScreenState extends State<MapScreen> {
           snippet: '${marker.userName ?? "Пользователь"} • ${marker.statusDisplayName}',
         ),
         onTap: () => _showMarkerDetails(marker),
-      ));
-    }
-
-    // Локальная точка "Моя позиция" — голубой (не красный)
-    if (_myPositionPin != null) {
-      result.add(Marker(
-        markerId: const MarkerId('my_position'),
-        position: _myPositionPin!,
-        icon: _iconCache['_my_position'] ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
-        infoWindow: const InfoWindow(title: 'Моя позиция'),
       ));
     }
 
@@ -1419,6 +1374,7 @@ class _MapScreenState extends State<MapScreen> {
               }
             },
             onTap: _onMapTap,
+            onLongPress: _onMapLongPress,
             myLocationEnabled: false,
             myLocationButtonEnabled: false,
             zoomControlsEnabled: false,
@@ -1575,7 +1531,6 @@ class _MapScreenState extends State<MapScreen> {
                     } else {
                       setState(() {
                         _isDrawingRoute = true;
-                        _isPlacingPosition = false;
                       });
                     }
                   },
@@ -1584,48 +1539,9 @@ class _MapScreenState extends State<MapScreen> {
                     color: Colors.white,
                   ),
                 ),
-                const SizedBox(height: 8),
-                // Кнопка "Моя позиция"
-                FloatingActionButton.small(
-                  heroTag: 'my_position',
-                  backgroundColor: _isPlacingPosition ? Colors.orange : const Color(0xFF1E1E1E),
-                  tooltip: _isPlacingPosition ? 'Отмена установки метки' : 'Отметить мою позицию',
-                  onPressed: _markMyPosition,
-                  child: Icon(
-                    _isPlacingPosition ? Icons.close : Icons.person_pin_circle,
-                    color: Colors.white,
-                  ),
-                ),
               ],
             ),
           ),
-
-          // Баннер режима установки позиции
-          if (_isPlacingPosition)
-            Positioned(
-              top: 16,
-              left: 16,
-              right: 80,
-              child: Card(
-                color: Colors.orange.withValues(alpha: 0.93),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  child: Row(
-                    children: [
-                      Icon(Icons.touch_app, color: Colors.white, size: 18),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Нажмите на карту для установки метки',
-                          style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
 
           // Баннер нового заказа — появляется на 5 секунд при новом маркере
           if (_newOrderBanner != null)
