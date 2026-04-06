@@ -19,8 +19,8 @@ if (rawUrl) {
       database: u.pathname.replace(/^\//, ''),
       user:     decodeURIComponent(u.username),
       password: decodeURIComponent(u.password),
-      // Внутренняя сеть Railway не поддерживает SSL; внешний proxy — требует
-      ssl: isInternal ? false : { rejectUnauthorized: false },
+      // На Railway SSL нужен везде (даже internal иногда его требует)
+      ssl: { rejectUnauthorized: false },
       max: 10,
       idleTimeoutMillis: 10000,
       connectionTimeoutMillis: 15000,
@@ -28,7 +28,7 @@ if (rawUrl) {
     };
 
     console.log('DB host:', u.hostname + ':' + (u.port || 5432));
-    console.log('DB ssl:', isInternal ? 'disabled (internal)' : 'enabled');
+    console.log('DB ssl: enabled (rejectUnauthorized: false)');
   } catch (e) {
     console.error('Не удалось разобрать DB URL:', e.message);
   }
@@ -51,13 +51,21 @@ if (!poolConfig) {
 
 const pool = new Pool(poolConfig);
 
-pool.connect((err, client, release) => {
-  if (err) {
-    console.error('Ошибка подключения к PostgreSQL:', err.message);
-    return;
-  }
-  console.log('Успешное подключение к PostgreSQL');
-  release();
-});
+const testConnection = (retries = 5, delay = 3000) => {
+  pool.connect((err, client, release) => {
+    if (err) {
+      if (retries > 0) {
+        console.warn(`Ошибка подключения к PostgreSQL (попыток осталось: ${retries}): ${err.message}`);
+        setTimeout(() => testConnection(retries - 1, delay), delay);
+      } else {
+        console.error('Не удалось подключиться к PostgreSQL после всех попыток:', err.message);
+      }
+      return;
+    }
+    console.log('Успешное подключение к PostgreSQL');
+    release();
+  });
+};
+testConnection();
 
 module.exports = pool;
