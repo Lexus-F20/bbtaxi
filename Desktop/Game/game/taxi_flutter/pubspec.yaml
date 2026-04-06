@@ -43,6 +43,12 @@ dependencies:
   # Выбор фото и видео из галереи / камеры
   image_picker: ^1.0.7
 
+  # Определение MIME-типа файла по расширению
+  mime: ^1.0.4
+
+  # Сжатие изображений перед загрузкой
+  flutter_image_compress: ^2.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
