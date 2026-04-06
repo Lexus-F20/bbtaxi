@@ -602,6 +602,44 @@ router.put('/:id/abandon', async (req, res) => {
   }
 });
 
+// ========== ДОБАВИТЬ МЕДИА К МАРКЕРУ ==========
+
+/**
+ * POST /markers/:id/media
+ * Добавить медиафайлы к существующему маркеру.
+ *
+ * Body: { media_urls: string[] }
+ */
+router.post('/:id/media', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { media_urls } = req.body;
+
+    if (!Array.isArray(media_urls) || media_urls.length === 0) {
+      return res.status(400).json({ error: 'Список медиафайлов пуст' });
+    }
+
+    const markerResult = await pool.query('SELECT media_urls FROM markers WHERE id = $1', [id]);
+    if (markerResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Маркер не найден' });
+    }
+
+    const current = markerResult.rows[0].media_urls || [];
+    const updated = [...current, ...media_urls];
+
+    const result = await pool.query(
+      `UPDATE markers SET media_urls = $2 WHERE id = $1
+       RETURNING id, media_urls`,
+      [id, JSON.stringify(updated)]
+    );
+
+    return res.json({ marker: result.rows[0] });
+  } catch (error) {
+    console.error('Ошибка добавления медиа к маркеру:', error);
+    return res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
 // ========== УДАЛИТЬ МАРКЕР ==========
 
 /**

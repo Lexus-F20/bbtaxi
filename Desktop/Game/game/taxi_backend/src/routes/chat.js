@@ -17,7 +17,7 @@ router.get('/global', async (req, res) => {
     const offset = parseInt(req.query.offset) || 0;
 
     const result = await pool.query(
-      `SELECT m.id, m.text, m.created_at, m.is_read,
+      `SELECT m.id, m.text, m.media_url, m.created_at, m.is_read,
               u.id AS sender_id, u.name AS sender_name, u.role AS sender_role
        FROM messages m
        LEFT JOIN users u ON m.sender_id = u.id
@@ -41,22 +41,22 @@ router.get('/global', async (req, res) => {
  * POST /chat/global
  * Отправить сообщение в общий чат.
  *
- * Body: { text: string }
+ * Body: { text: string, media_url?: string }
  */
 router.post('/global', async (req, res) => {
   try {
-    const { text } = req.body;
+    const { text, media_url } = req.body;
     const senderId = req.user.id;
 
-    if (!text || text.trim() === '') {
-      return res.status(400).json({ error: 'Текст сообщения обязателен' });
+    if ((!text || text.trim() === '') && !media_url) {
+      return res.status(400).json({ error: 'Текст или медиафайл обязательны' });
     }
 
     const result = await pool.query(
-      `INSERT INTO messages (sender_id, receiver_id, text)
-       VALUES ($1, NULL, $2)
-       RETURNING id, sender_id, text, is_read, created_at`,
-      [senderId, text.trim()]
+      `INSERT INTO messages (sender_id, receiver_id, text, media_url)
+       VALUES ($1, NULL, $2, $3)
+       RETURNING id, sender_id, text, media_url, is_read, created_at`,
+      [senderId, (text || '').trim(), media_url || null]
     );
 
     const message = result.rows[0];
@@ -100,7 +100,7 @@ router.get('/direct/:userId', async (req, res) => {
     const offset = parseInt(req.query.offset) || 0;
 
     const result = await pool.query(
-      `SELECT m.id, m.text, m.created_at, m.is_read,
+      `SELECT m.id, m.text, m.media_url, m.created_at, m.is_read,
               u.id AS sender_id, u.name AS sender_name, u.role AS sender_role,
               r.id AS receiver_id, r.name AS receiver_name
        FROM messages m
@@ -133,16 +133,16 @@ router.get('/direct/:userId', async (req, res) => {
  * POST /chat/direct/:userId
  * Отправить личное сообщение пользователю.
  *
- * Body: { text: string }
+ * Body: { text: string, media_url?: string }
  */
 router.post('/direct/:userId', async (req, res) => {
   try {
-    const { text } = req.body;
+    const { text, media_url } = req.body;
     const senderId = req.user.id;
     const receiverId = parseInt(req.params.userId);
 
-    if (!text || text.trim() === '') {
-      return res.status(400).json({ error: 'Текст сообщения обязателен' });
+    if ((!text || text.trim() === '') && !media_url) {
+      return res.status(400).json({ error: 'Текст или медиафайл обязательны' });
     }
 
     // Проверяем существование получателя
@@ -158,10 +158,10 @@ router.post('/direct/:userId', async (req, res) => {
     const receiver = receiverResult.rows[0];
 
     const result = await pool.query(
-      `INSERT INTO messages (sender_id, receiver_id, text)
-       VALUES ($1, $2, $3)
-       RETURNING id, sender_id, receiver_id, text, is_read, created_at`,
-      [senderId, receiverId, text.trim()]
+      `INSERT INTO messages (sender_id, receiver_id, text, media_url)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, sender_id, receiver_id, text, media_url, is_read, created_at`,
+      [senderId, receiverId, (text || '').trim(), media_url || null]
     );
 
     const message = result.rows[0];
