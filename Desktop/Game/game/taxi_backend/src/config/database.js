@@ -2,31 +2,52 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
-// Предпочитаем DATABASE_PUBLIC_URL (публичный proxy, всегда SSL)
-// Если нет — используем DATABASE_URL (внутренний, без SSL на Railway)
-const publicUrl  = process.env.DATABASE_PUBLIC_URL;
-const privateUrl = process.env.DATABASE_URL;
-const dbUrl = publicUrl || privateUrl;
+// Берём URL, обрезаем пробелы/переносы строк которые могут попасть через env
+const rawUrl = (process.env.DATABASE_PUBLIC_URL || process.env.DATABASE_URL || '').trim();
 
-// Railway требует SSL для всех подключений (и публичных, и приватных)
-const ssl = dbUrl ? { rejectUnauthorized: false } : false;
+let poolConfig;
 
-console.log('DB host:', dbUrl ? dbUrl.replace(/:([^:@]+)@/, ':***@').split('@')[1] : 'PG vars');
-console.log('DB ssl:', JSON.stringify(ssl));
+if (rawUrl) {
+  try {
+    // Парсим URL вручную — надёжнее чем connectionString, избегаем проблем с SSL
+    const u = new URL(rawUrl);
+    const isInternal = u.hostname.includes('railway.internal');
 
-const poolConfig = dbUrl
-  ? { connectionString: dbUrl, ssl, max: 10, idleTimeoutMillis: 10000, connectionTimeoutMillis: 10000, keepAlive: true }
-  : {
-      host:     process.env.PGHOST     || process.env.DB_HOST     || 'localhost',
-      port:     parseInt(process.env.PGPORT  || process.env.DB_PORT)  || 5432,
-      database: process.env.PGDATABASE || process.env.DB_NAME     || 'taxi_db',
-      user:     process.env.PGUSER     || process.env.DB_USER     || 'postgres',
-      password: process.env.PGPASSWORD || process.env.DB_PASSWORD || '',
-      ssl: false,
-      max: 20,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
+    poolConfig = {
+      host:     u.hostname,
+      port:     parseInt(u.port) || 5432,
+      database: u.pathname.replace(/^\//, ''),
+      user:     decodeURIComponent(u.username),
+      password: decodeURIComponent(u.password),
+      // Внутренняя сеть Railway не поддерживает SSL; внешний proxy — требует
+      ssl: isInternal ? false : { rejectUnauthorized: false },
+      max: 10,
+      idleTimeoutMillis: 10000,
+      connectionTimeoutMillis: 15000,
+      keepAlive: true,
     };
+
+    console.log('DB host:', u.hostname + ':' + (u.port || 5432));
+    console.log('DB ssl:', isInternal ? 'disabled (internal)' : 'enabled');
+  } catch (e) {
+    console.error('Не удалось разобрать DB URL:', e.message);
+  }
+}
+
+if (!poolConfig) {
+  poolConfig = {
+    host:     process.env.PGHOST     || process.env.DB_HOST     || 'localhost',
+    port:     parseInt(process.env.PGPORT  || process.env.DB_PORT)  || 5432,
+    database: process.env.PGDATABASE || process.env.DB_NAME     || 'taxi_db',
+    user:     process.env.PGUSER     || process.env.DB_USER     || 'postgres',
+    password: process.env.PGPASSWORD || process.env.DB_PASSWORD || '',
+    ssl: false,
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+  };
+  console.log('DB: using PGHOST/PGPORT vars, ssl: disabled');
+}
 
 const pool = new Pool(poolConfig);
 
