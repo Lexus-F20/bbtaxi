@@ -691,7 +691,7 @@ class _MapScreenState extends State<MapScreen> {
                                   ? const Center(child: Icon(Icons.videocam, color: Colors.white, size: 32))
                                   : ClipRRect(
                                       borderRadius: BorderRadius.circular(8),
-                                      child: Image.file(File(file.path), fit: BoxFit.cover),
+                                      child: Image.file(File(file.path), width: 80, height: 80, fit: BoxFit.cover),
                                     ),
                             ),
                             Positioned(

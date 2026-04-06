@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../models/marker_model.dart';
 import '../providers/auth_provider.dart';
+import '../utils/media_viewer.dart';
 import '../services/api_service.dart';
 import '../services/media_service.dart';
 import '../services/socket_service.dart';
@@ -644,11 +645,14 @@ class _MessageBubble extends StatelessWidget {
                         child: Icon(Icons.play_circle_fill, color: Colors.white, size: 48),
                       ),
                     )
-                  : Image.network(
-                      message.mediaUrl!,
-                      width: 200,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white38),
+                  : GestureDetector(
+                      onTap: () => openImageViewer(context, message.mediaUrl!),
+                      child: Image.network(
+                        message.mediaUrl!,
+                        width: 200,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white38),
+                      ),
                     ),
             ),
           ],

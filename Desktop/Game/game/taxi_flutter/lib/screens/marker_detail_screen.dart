@@ -14,6 +14,7 @@ import '../services/media_service.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../utils/coordinate_utils.dart';
+import '../utils/media_viewer.dart';
 import 'user_profile_screen.dart';
 
 class MarkerDetailScreen extends StatefulWidget {
@@ -461,7 +462,7 @@ class _MarkerDetailScreenState extends State<MarkerDetailScreen> {
                               final url = _marker.mediaUrls[i];
                               final isVideo = MediaService.isVideo(url);
                               return GestureDetector(
-                                onTap: () {},
+                                onTap: isVideo ? null : () => openImageViewer(context, url),
                                 child: Container(
                                   margin: const EdgeInsets.only(right: 8),
                                   width: 100,
