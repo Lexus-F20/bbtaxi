@@ -23,7 +23,7 @@ console.log('DB host:', dbUrl ? dbUrl.replace(/:([^:@]+)@/, ':***@').split('@')[
 console.log('DB ssl:', JSON.stringify(ssl));
 
 const poolConfig = dbUrl
-  ? { connectionString: dbUrl, ssl, max: 20, idleTimeoutMillis: 30000, connectionTimeoutMillis: 5000 }
+  ? { connectionString: dbUrl, ssl, max: 10, idleTimeoutMillis: 10000, connectionTimeoutMillis: 10000, keepAlive: true }
   : {
       host:     process.env.PGHOST     || process.env.DB_HOST     || 'localhost',
       port:     parseInt(process.env.PGPORT  || process.env.DB_PORT)  || 5432,
