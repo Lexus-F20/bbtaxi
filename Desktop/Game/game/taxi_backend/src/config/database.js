@@ -8,29 +8,18 @@ const rawUrl = (process.env.DATABASE_PUBLIC_URL || process.env.DATABASE_URL || '
 let poolConfig;
 
 if (rawUrl) {
-  try {
-    // Парсим URL вручную — надёжнее чем connectionString, избегаем проблем с SSL
-    const u = new URL(rawUrl);
-    const isInternal = u.hostname.includes('railway.internal');
-
-    poolConfig = {
-      host:     u.hostname,
-      port:     parseInt(u.port) || 5432,
-      database: u.pathname.replace(/^\//, ''),
-      user:     decodeURIComponent(u.username),
-      password: decodeURIComponent(u.password),
-      ssl: isInternal ? false : { rejectUnauthorized: false },
-      max: 10,
-      idleTimeoutMillis: 10000,
-      connectionTimeoutMillis: 15000,
-      keepAlive: true,
-    };
-
-    console.log('DB host:', u.hostname + ':' + (u.port || 5432));
-    console.log('DB ssl:', isInternal ? 'disabled (internal)' : 'enabled');
-  } catch (e) {
-    console.error('Не удалось разобрать DB URL:', e.message);
-  }
+  const isInternal = rawUrl.includes('railway.internal');
+  poolConfig = {
+    connectionString: rawUrl,
+    ssl: isInternal ? false : { rejectUnauthorized: false },
+    max: 10,
+    idleTimeoutMillis: 10000,
+    connectionTimeoutMillis: 15000,
+    keepAlive: true,
+  };
+  const hostMatch = rawUrl.match(/@([^/]+)/);
+  console.log('DB host:', hostMatch ? hostMatch[1] : 'unknown');
+  console.log('DB ssl:', isInternal ? 'disabled (internal)' : 'enabled');
 }
 
 if (!poolConfig) {
