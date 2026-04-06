@@ -43,9 +43,6 @@ dependencies:
   # Выбор фото и видео из галереи / камеры
   image_picker: ^1.0.7
 
-  # Firebase Storage для загрузки медиафайлов
-  firebase_storage: ^13.1.0
-
 dev_dependencies:
   flutter_test:
     sdk: flutter

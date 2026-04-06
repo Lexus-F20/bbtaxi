@@ -19,6 +19,7 @@ if (!admin.apps.length) {
 
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
+      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'bbdron-c5dcf.firebasestorage.app',
     });
 
     console.log('Firebase Admin SDK инициализирован успешно');

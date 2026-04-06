@@ -22,6 +22,7 @@ class ApiService {
 
   void setToken(String token) => _token = token;
   void clearToken() => _token = null;
+  String? get token => _token;
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',

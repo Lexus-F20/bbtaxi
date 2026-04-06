@@ -19,6 +19,7 @@ const chatRoutes = require('./routes/chat');
 const ratingsRoutes = require('./routes/ratings');
 const usersRoutes = require('./routes/users');
 const userRoutesRoutes = require('./routes/user_routes');
+const uploadRoutes = require('./routes/upload');
 
 // Импортируем middleware авторизации
 const { authenticateToken } = require('./middleware/auth');
@@ -77,6 +78,7 @@ app.use('/chat', authenticateToken, chatRoutes);
 app.use('/ratings', authenticateToken, ratingsRoutes);
 app.use('/users', authenticateToken, usersRoutes);
 app.use('/routes', authenticateToken, userRoutesRoutes);
+app.use('/upload', authenticateToken, uploadRoutes);
 
 // Проверка работоспособности сервера
 app.get('/health', (req, res) => {
