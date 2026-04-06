@@ -85,6 +85,15 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', version: '2.0-upload', timestamp: new Date().toISOString() });
 });
 
+// Версия приложения для автообновления
+// Установите в Railway: APP_VERSION=1.0.1 и APK_URL=https://...ссылка на apk...
+app.get('/version', (req, res) => {
+  res.json({
+    version: process.env.APP_VERSION || '1.0.0',
+    apk_url: process.env.APK_URL || null,
+  });
+});
+
 // ========== SOCKET.IO ==========
 
 // Хранилище соответствий userId -> socketId для адресных уведомлений
