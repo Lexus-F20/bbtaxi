@@ -19,8 +19,7 @@ if (rawUrl) {
       database: u.pathname.replace(/^\//, ''),
       user:     decodeURIComponent(u.username),
       password: decodeURIComponent(u.password),
-      // На Railway SSL нужен везде (даже internal иногда его требует)
-      ssl: { rejectUnauthorized: false },
+      ssl: isInternal ? false : { rejectUnauthorized: false },
       max: 10,
       idleTimeoutMillis: 10000,
       connectionTimeoutMillis: 15000,
@@ -28,7 +27,7 @@ if (rawUrl) {
     };
 
     console.log('DB host:', u.hostname + ':' + (u.port || 5432));
-    console.log('DB ssl: enabled (rejectUnauthorized: false)');
+    console.log('DB ssl:', isInternal ? 'disabled (internal)' : 'enabled');
   } catch (e) {
     console.error('Не удалось разобрать DB URL:', e.message);
   }
