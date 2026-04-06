@@ -1419,7 +1419,6 @@ class _MapScreenState extends State<MapScreen> {
               }
             },
             onTap: _onMapTap,
-            onLongPress: _onMapLongPress,
             myLocationEnabled: false,
             myLocationButtonEnabled: false,
             zoomControlsEnabled: false,

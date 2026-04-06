@@ -104,6 +104,7 @@ router.get('/', async (req, res) => {
     let query = `
       SELECT m.id, m.latitude, m.longitude, m.title, m.description,
              m.color, m.status, m.reject_reason, m.report, m.done_at, m.created_at,
+             m.media_urls,
              u.id AS user_id, u.name AS user_name,
              a.id AS accepted_by, a.name AS accepted_by_name
       FROM markers m
@@ -150,7 +151,7 @@ router.get('/my', async (req, res) => {
     const result = await pool.query(
       `SELECT m.id, m.user_id, m.latitude, m.longitude, m.title, m.description,
               m.color, m.status, m.reject_reason, m.report, m.done_at, m.created_at,
-              u.name AS user_name,
+              m.media_urls, u.name AS user_name,
               a.id AS accepted_by, a.name AS accepted_by_name
        FROM markers m
        LEFT JOIN users u ON m.user_id = u.id
@@ -194,7 +195,7 @@ router.get('/taken', async (req, res) => {
     const result = await pool.query(
       `SELECT m.id, m.user_id, m.accepted_by, m.latitude, m.longitude, m.title, m.description,
               m.color, m.status, m.reject_reason, m.report, m.done_at, m.created_at,
-              u.name AS user_name, a.name AS accepted_by_name
+              m.media_urls, u.name AS user_name, a.name AS accepted_by_name
        FROM markers m
        LEFT JOIN users u ON m.user_id = u.id
        LEFT JOIN users a ON m.accepted_by = a.id
