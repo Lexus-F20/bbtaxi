@@ -2,14 +2,30 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
-// Поддержка DATABASE_URL, DATABASE_PUBLIC_URL, PGDATABASE и отдельных переменных
-const dbUrl =
-  process.env.DATABASE_URL ||
-  process.env.DATABASE_PUBLIC_URL ||
-  process.env.RAILWAY_DATABASE_URL;
+// Railway даёт два URL:
+//   DATABASE_URL        — приватный (.railway.internal), SSL НЕ нужен
+//   DATABASE_PUBLIC_URL — публичный (*.railway.app),     SSL нужен
+const privateUrl = process.env.DATABASE_URL;
+const publicUrl  = process.env.DATABASE_PUBLIC_URL;
 
-// SSL нужен всегда на Railway (для любого способа подключения)
-const sslConfig = { rejectUnauthorized: false };
+// Выбираем URL и настройку SSL
+let dbUrl, sslConfig;
+if (privateUrl && privateUrl.includes('.railway.internal')) {
+  // Приватная сеть Railway — без SSL
+  dbUrl = privateUrl;
+  sslConfig = false;
+} else if (privateUrl) {
+  // DATABASE_URL есть, но не internal — SSL с мягкой проверкой
+  dbUrl = privateUrl;
+  sslConfig = { rejectUnauthorized: false };
+} else if (publicUrl) {
+  // Публичный URL — SSL обязателен
+  dbUrl = publicUrl;
+  sslConfig = { rejectUnauthorized: false };
+} else {
+  dbUrl = null;
+  sslConfig = false;
+}
 
 const poolConfig = dbUrl
   ? {
@@ -25,7 +41,7 @@ const poolConfig = dbUrl
       database: process.env.PGDATABASE || process.env.DB_NAME || 'taxi_db',
       user: process.env.PGUSER || process.env.DB_USER || 'postgres',
       password: process.env.PGPASSWORD || process.env.DB_PASSWORD || '',
-      ssl: process.env.PGHOST ? sslConfig : false,
+      ssl: false,
       max: 20,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
