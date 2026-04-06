@@ -467,14 +467,18 @@ router.put('/:id/complete', async (req, res) => {
       return res.status(400).json({ error: 'Можно завершить только взятый маркер' });
     }
 
+    // Объединяем существующие фото маркера с новыми из отчёта
+    const existing = Array.isArray(marker.media_urls) ? marker.media_urls : [];
     const reportMediaUrls = Array.isArray(media_urls) ? media_urls : [];
+    const allMediaUrls = [...existing, ...reportMediaUrls];
+
     const updateResult = await pool.query(
       `UPDATE markers
        SET status = 'done', report = $2, done_at = NOW(), media_urls = $3
        WHERE id = $1
        RETURNING id, latitude, longitude, title, description, color, status,
                  report, done_at, created_at, user_id, accepted_by, media_urls`,
-      [id, report, JSON.stringify(reportMediaUrls)]
+      [id, report, JSON.stringify(allMediaUrls)]
     );
 
     const updatedMarker = {
