@@ -34,6 +34,14 @@ class _MarkerDetailScreenState extends State<MarkerDetailScreen> {
   void initState() {
     super.initState();
     _marker = widget.marker;
+    _loadMarker();
+  }
+
+  Future<void> _loadMarker() async {
+    try {
+      final fresh = await ApiService().getMarker(_marker.id);
+      if (mounted) setState(() => _marker = fresh);
+    } catch (_) {}
     _loadHistory();
   }
 
@@ -267,7 +275,7 @@ class _MarkerDetailScreenState extends State<MarkerDetailScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadHistory,
+            onPressed: _loadMarker,
           ),
         ],
       ),

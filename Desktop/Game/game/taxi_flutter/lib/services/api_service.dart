@@ -102,6 +102,16 @@ class ApiService {
     throw ApiException(data['error'] ?? 'Ошибка получения маркеров');
   }
 
+  Future<MarkerModel> getMarker(int markerId) async {
+    final response = await http.get(
+      Uri.parse('$kBaseUrl/markers/$markerId'),
+      headers: _headers,
+    );
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode == 200) return MarkerModel.fromJson(data['marker']);
+    throw ApiException(data['error'] ?? 'Ошибка получения маркера');
+  }
+
   Future<MarkerModel> createMarker({
     required double latitude,
     required double longitude,

@@ -211,6 +211,32 @@ router.get('/taken', async (req, res) => {
   }
 });
 
+// ========== ПОЛУЧИТЬ ОДИН МАРКЕР ==========
+
+router.get('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      `SELECT m.id, m.user_id, m.latitude, m.longitude, m.title, m.description,
+              m.color, m.status, m.reject_reason, m.report, m.done_at, m.created_at,
+              m.media_urls, u.name AS user_name,
+              a.id AS accepted_by, a.name AS accepted_by_name
+       FROM markers m
+       LEFT JOIN users u ON m.user_id = u.id
+       LEFT JOIN users a ON m.accepted_by = a.id
+       WHERE m.id = $1`,
+      [id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Маркер не найден' });
+    }
+    return res.json({ marker: result.rows[0] });
+  } catch (error) {
+    console.error('Ошибка получения маркера:', error);
+    return res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
 // ========== ИСТОРИЯ МАРКЕРА ==========
 
 /**

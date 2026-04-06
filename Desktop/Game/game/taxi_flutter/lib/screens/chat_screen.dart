@@ -735,13 +735,22 @@ class _ChatInputState extends State<_ChatInput> {
 
   Future<void> _send() async {
     final text = widget.controller.text.trim();
-    if (text.isEmpty && _pickedFile == null || widget.isSending || _isUploading) return;
+    if ((text.isEmpty && _pickedFile == null) || widget.isSending || _isUploading) return;
 
     String? mediaUrl;
     if (_pickedFile != null) {
       setState(() => _isUploading = true);
-      final urls = await MediaService.uploadFiles([_pickedFile!], 'chat');
-      mediaUrl = urls.isNotEmpty ? urls.first : null;
+      try {
+        mediaUrl = await MediaService.uploadFile(_pickedFile!, 'chat');
+      } catch (e) {
+        setState(() { _isUploading = false; });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ошибка загрузки файла: $e'), backgroundColor: Colors.red),
+          );
+        }
+        return;
+      }
       setState(() { _isUploading = false; _pickedFile = null; });
     }
 

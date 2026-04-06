@@ -736,7 +736,16 @@ class _MapScreenState extends State<MapScreen> {
 
                     List<String> mediaUrls = [];
                     if (selectedFiles.isNotEmpty) {
-                      mediaUrls = await MediaService.uploadFiles(selectedFiles, 'markers');
+                      try {
+                        mediaUrls = await MediaService.uploadFiles(selectedFiles, 'markers');
+                      } catch (e) {
+                        setSheetState(() => isUploading = false);
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Ошибка загрузки фото: $e'), backgroundColor: Colors.red),
+                        );
+                        return;
+                      }
                     }
 
                     final markersProvider = context.read<MarkersProvider>();
