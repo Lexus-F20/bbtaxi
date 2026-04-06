@@ -8,10 +8,9 @@ const rawUrl = (process.env.DATABASE_PUBLIC_URL || process.env.DATABASE_URL || '
 let poolConfig;
 
 if (rawUrl) {
-  const isInternal = rawUrl.includes('railway.internal');
   poolConfig = {
     connectionString: rawUrl,
-    ssl: isInternal ? false : { rejectUnauthorized: false },
+    ssl: false,
     max: 10,
     idleTimeoutMillis: 10000,
     connectionTimeoutMillis: 15000,
@@ -19,7 +18,7 @@ if (rawUrl) {
   };
   const hostMatch = rawUrl.match(/@([^/]+)/);
   console.log('DB host:', hostMatch ? hostMatch[1] : 'unknown');
-  console.log('DB ssl:', isInternal ? 'disabled (internal)' : 'enabled');
+  console.log('DB ssl: disabled');
 }
 
 if (!poolConfig) {
