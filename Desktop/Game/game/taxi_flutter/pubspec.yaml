@@ -1,0 +1,55 @@
+name: taxi_app
+description: Приложение такси с картами и реальным временем
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # HTTP-клиент для работы с REST API
+  http: ^1.1.0
+
+  # Google Maps Flutter (спутниковый режим)
+  google_maps_flutter: ^2.5.0
+
+  # Socket.io клиент для real-time обновлений
+  socket_io_client: ^3.1.4
+
+  # Firebase Cloud Messaging для push-уведомлений
+  firebase_core: ^4.5.0
+  firebase_messaging: ^16.1.2
+
+  # Локальное хранилище (JWT токен, данные пользователя)
+  shared_preferences: ^2.2.2
+
+  # Управление состоянием
+  provider: ^6.1.1
+
+  # Форматирование дат
+  intl: 0.20.2
+
+  # Текущая GPS-позиция пользователя (центровка карты)
+  geolocator: ^13.0.0
+
+  # Иконки Material
+  cupertino_icons: ^1.0.2
+
+  # Выбор фото и видео из галереи / камеры
+  image_picker: ^1.0.7
+
+  # Firebase Storage для загрузки медиафайлов
+  firebase_storage: ^13.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

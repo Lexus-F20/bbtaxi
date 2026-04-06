@@ -39,7 +39,7 @@ async function recordHistory(markerId, userId, action, note = null) {
  */
 router.post('/', async (req, res) => {
   try {
-    const { latitude, longitude, title, description, color } = req.body;
+    const { latitude, longitude, title, description, color, media_urls } = req.body;
     const userId = req.user.id;
     const userName = req.user.name;
 
@@ -54,13 +54,14 @@ router.post('/', async (req, res) => {
     // Допустимые цвета маркеров
     const allowedColors = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink'];
     const markerColor = allowedColors.includes(color) ? color : 'orange';
+    const mediaUrls = Array.isArray(media_urls) ? media_urls : [];
 
     // Сохраняем маркер в БД
     const result = await pool.query(
-      `INSERT INTO markers (user_id, latitude, longitude, title, description, color, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'pending')
-       RETURNING id, user_id, latitude, longitude, title, description, color, status, created_at`,
-      [userId, latitude, longitude, title, description || '', markerColor]
+      `INSERT INTO markers (user_id, latitude, longitude, title, description, color, status, media_urls)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
+       RETURNING id, user_id, latitude, longitude, title, description, color, status, media_urls, created_at`,
+      [userId, latitude, longitude, title, description || '', markerColor, JSON.stringify(mediaUrls)]
     );
 
     const newMarker = result.rows[0];
@@ -408,7 +409,7 @@ router.put('/:id/reject', requireAdminOrDriver, async (req, res) => {
 router.put('/:id/complete', async (req, res) => {
   try {
     const { id } = req.params;
-    const { report } = req.body;
+    const { report, media_urls } = req.body;
     const userId = req.user.id;
     const userName = req.user.name;
 
@@ -439,13 +440,14 @@ router.put('/:id/complete', async (req, res) => {
       return res.status(400).json({ error: 'Можно завершить только взятый маркер' });
     }
 
+    const reportMediaUrls = Array.isArray(media_urls) ? media_urls : [];
     const updateResult = await pool.query(
       `UPDATE markers
-       SET status = 'done', report = $2, done_at = NOW()
+       SET status = 'done', report = $2, done_at = NOW(), media_urls = $3
        WHERE id = $1
        RETURNING id, latitude, longitude, title, description, color, status,
-                 report, done_at, created_at, user_id, accepted_by`,
-      [id, report]
+                 report, done_at, created_at, user_id, accepted_by, media_urls`,
+      [id, report, JSON.stringify(reportMediaUrls)]
     );
 
     const updatedMarker = {
