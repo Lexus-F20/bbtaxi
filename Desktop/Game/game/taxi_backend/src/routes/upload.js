@@ -13,7 +13,7 @@ const upload = multer({
 
 /**
  * POST /upload
- * Загружает файл в Firebase Storage и возвращает публичный URL.
+ * Загружает файл в Firebase Storage и возвращает URL для скачивания.
  *
  * Multipart-форма:
  *   file   — файл (обязательно)
@@ -32,16 +32,18 @@ router.post('/', upload.single('file'), async (req, res) => {
     const bucket = admin.storage().bucket();
     const fileRef = bucket.file(fileName);
 
+    // Загружаем файл в Storage (без ACL — совместимо с uniform bucket-level access)
     await fileRef.save(req.file.buffer, {
       metadata: { contentType: req.file.mimetype },
-      public: true,
     });
 
-    // Публичный URL формата Firebase Storage CDN
-    const encodedPath = encodeURIComponent(fileName).replace(/%2F/g, '/');
-    const url = `https://storage.googleapis.com/${bucket.name}/${encodedPath}`;
+    // Получаем подписанный URL на 10 лет
+    const [signedUrl] = await fileRef.getSignedUrl({
+      action: 'read',
+      expires: '01-01-2035',
+    });
 
-    return res.json({ url });
+    return res.json({ url: signedUrl });
   } catch (error) {
     console.error('Ошибка загрузки файла:', error);
     return res.status(500).json({ error: `Ошибка загрузки: ${error.message}` });
