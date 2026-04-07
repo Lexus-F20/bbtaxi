@@ -136,7 +136,7 @@ app.get('/media/*', async (req, res) => {
 
     res.setHeader('Content-Type', metadata.contentType || 'application/octet-stream');
 
-    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    res.setHeader('Cache-Control', 'no-store');
 
 
 
