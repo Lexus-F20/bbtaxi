@@ -50,18 +50,19 @@ class MediaService {
     }
   }
 
-  /// Сжать видео перед загрузкой (~720p, среднее качество).
+  /// Сжать видео перед загрузкой (~480p, низкое качество для скорости).
+  /// Таймаут 3 минуты — если завис, возвращает null (грузим оригинал).
   static Future<File?> _compressVideo(String path) async {
     try {
       final info = await VideoCompress.compressVideo(
         path,
-        quality: VideoQuality.MediumQuality,
+        quality: VideoQuality.LowQuality,
         deleteOrigin: false,
         includeAudio: true,
-      );
+      ).timeout(const Duration(minutes: 3));
       return info?.file;
     } catch (e) {
-      debugPrint('compressVideo error: $e');
+      debugPrint('compressVideo error (используем оригинал): $e');
       return null;
     }
   }
@@ -93,8 +94,10 @@ class MediaService {
       await http.MultipartFile.fromPath('file', filePath, filename: fileName),
     );
 
-    final streamed = await request.send();
-    final body = await streamed.stream.bytesToString();
+    final streamed = await request.send().timeout(const Duration(minutes: 5));
+    final body = await streamed.stream
+        .bytesToString()
+        .timeout(const Duration(minutes: 5));
 
     if (streamed.statusCode != 200) {
       throw Exception('Ошибка загрузки (${streamed.statusCode}): $body');
