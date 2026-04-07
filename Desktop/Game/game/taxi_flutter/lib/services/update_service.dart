@@ -9,7 +9,7 @@ import 'api_service.dart';
 
 /// Текущая версия приложения.
 /// Увеличивайте при каждой новой сборке APK и задавайте такую же в Railway: APP_VERSION=x.x.x
-const String kCurrentVersion = '1.0.1';
+const String kCurrentVersion = '1.0.2';
 
 class UpdateService {
   static const _channel = MethodChannel('app_updater');
@@ -60,8 +60,7 @@ class UpdateService {
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: const Text('Доступно обновление'),
-        content: Text(
-            'Версия $version готова к установке.\nОбновить сейчас?'),
+        content: Text('Версия $version готова к установке.\nОбновить сейчас?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -81,48 +80,77 @@ class UpdateService {
 
   static Future<void> _downloadAndInstall(
       BuildContext context, String apkUrl) async {
-    final messenger = ScaffoldMessenger.of(context);
+    // Notifier для обновления прогресса внутри диалога
+    final progressNotifier = ValueNotifier<_DlProgress>(const _DlProgress(0, 0));
 
-    final snackCtrl = messenger.showSnackBar(
-      const SnackBar(
-        content: Row(
-          children: [
-            SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2, color: Colors.white),
+    // Показываем диалог с прогресс-баром
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: const Text('Загрузка обновления'),
+          content: ValueListenableBuilder<_DlProgress>(
+            valueListenable: progressNotifier,
+            builder: (_, prog, __) => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LinearProgressIndicator(
+                  value: prog.total > 0 ? prog.received / prog.total : null,
+                  backgroundColor: Colors.white12,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  prog.total > 0
+                      ? '${_mb(prog.received)} МБ из ${_mb(prog.total)} МБ'
+                      : 'Подключение...',
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ],
             ),
-            SizedBox(width: 12),
-            Text('Загрузка обновления...'),
-          ],
+          ),
         ),
-        duration: Duration(minutes: 10),
       ),
     );
 
     try {
-      // Скачиваем APK
       final req = http.Request('GET', Uri.parse(apkUrl));
       final streamed = await req.send().timeout(const Duration(minutes: 10));
+
       if (streamed.statusCode != 200) {
         throw Exception('HTTP ${streamed.statusCode}');
       }
-      final bytes = await streamed.stream.toBytes();
 
-      // Сохраняем во временную директорию
+      final total = streamed.contentLength ?? 0;
+      var received = 0;
+      final buffer = <int>[];
+
+      // Читаем чанками и обновляем прогресс
+      await for (final chunk in streamed.stream) {
+        buffer.addAll(chunk);
+        received += chunk.length;
+        progressNotifier.value = _DlProgress(received, total);
+      }
+
+      // Сохраняем APK во временную папку
       final tmpDir = await getTemporaryDirectory();
       final apkFile = File('${tmpDir.path}/bbdron_update.apk');
-      await apkFile.writeAsBytes(bytes);
+      await apkFile.writeAsBytes(buffer);
 
-      snackCtrl.close();
+      // Закрываем диалог прогресса
+      if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+      progressNotifier.dispose();
 
-      // Передаём путь в Android для запуска установщика
+      // Открываем системный установщик Android
       await _channel.invokeMethod('installApk', apkFile.path);
     } catch (e) {
-      snackCtrl.close();
+      if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+      progressNotifier.dispose();
+
       if (context.mounted) {
-        messenger.showSnackBar(
+        ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Ошибка загрузки: $e'),
             backgroundColor: Colors.red,
@@ -131,4 +159,12 @@ class UpdateService {
       }
     }
   }
+
+  static String _mb(int bytes) => (bytes / 1048576).toStringAsFixed(1);
+}
+
+class _DlProgress {
+  final int received;
+  final int total;
+  const _DlProgress(this.received, this.total);
 }
