@@ -11,6 +11,7 @@ import 'providers/routes_provider.dart';
 import 'firebase_options.dart';
 import 'screens/login_screen.dart';
 import 'screens/map_screen.dart';
+import 'services/notification_service.dart';
 import 'services/update_service.dart';
 
 // Обработчик фоновых push-уведомлений (должен быть top-level функцией)
@@ -53,6 +54,8 @@ class TaxiApp extends StatelessWidget {
       child: MaterialApp(
         title: 'BBDron',
         debugShowCheckedModeBanner: false,
+        navigatorKey: NotificationService.navigatorKey,
+        scaffoldMessengerKey: NotificationService.messengerKey,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
             seedColor: const Color(0xFF1A237E),
