@@ -86,12 +86,37 @@ app.get('/health', (req, res) => {
 });
 
 // Версия приложения для автообновления
-// Установите в Railway: APP_VERSION=1.0.1 и APK_URL=https://...ссылка на apk...
 app.get('/version', (req, res) => {
+  const hasApk = !!process.env.APK_STORAGE_PATH;
   res.json({
     version: process.env.APP_VERSION || '1.0.0',
-    apk_url: process.env.APK_URL || null,
+    // Если задан путь в Storage — отдаём наш прокси-эндпоинт, иначе прямую ссылку
+    apk_url: hasApk
+      ? `${req.protocol}://${req.get('host')}/apk`
+      : (process.env.APK_URL || null),
   });
+});
+
+// Скачать APK — генерирует свежую подписанную ссылку через Firebase Admin и делает redirect.
+// Установите в Railway: APK_STORAGE_PATH=apk/app-release.apk
+app.get('/apk', async (req, res) => {
+  const storagePath = process.env.APK_STORAGE_PATH;
+  if (!storagePath) {
+    return res.status(404).json({ error: 'APK_STORAGE_PATH не задан' });
+  }
+  try {
+    const admin = require('./config/firebase');
+    const bucket = admin.storage().bucket();
+    const file = bucket.file(storagePath);
+    const [signedUrl] = await file.getSignedUrl({
+      action: 'read',
+      expires: Date.now() + 30 * 60 * 1000, // 30 минут
+    });
+    return res.redirect(302, signedUrl);
+  } catch (e) {
+    console.error('Ошибка генерации APK URL:', e.message);
+    return res.status(500).json({ error: 'Не удалось получить ссылку на APK' });
+  }
 });
 
 // ========== SOCKET.IO ==========
