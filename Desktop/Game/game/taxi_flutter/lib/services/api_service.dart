@@ -13,6 +13,24 @@ import '../models/user_model.dart';
 /// ДЛЯ РЕАЛЬНОГО ТЕЛЕФОНА через Wi-Fi: используйте http://<IP_КОМПЬЮТЕРА>:3000
 const String kBaseUrl = 'https://bbtaxi-production.up.railway.app';
 
+/// Конвертирует старые прямые URL Firebase Storage в прокси через наш бэкенд.
+/// Старый формат: https://firebasestorage.googleapis.com/v0/b/BUCKET/o/PATH?alt=media&token=TOKEN
+/// Новый формат:  https://bbtaxi-production.up.railway.app/media/PATH
+/// Новые URL уже возвращаются в правильном формате — эта функция нужна для совместимости.
+String normalizeMediaUrl(String url) {
+  if (url.contains('firebasestorage.googleapis.com')) {
+    final uri = Uri.tryParse(url);
+    if (uri != null) {
+      final parts = uri.path.split('/o/');
+      if (parts.length == 2) {
+        final decodedPath = Uri.decodeComponent(parts[1].split('?').first);
+        return '$kBaseUrl/media/$decodedPath';
+      }
+    }
+  }
+  return url;
+}
+
 class ApiService {
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;

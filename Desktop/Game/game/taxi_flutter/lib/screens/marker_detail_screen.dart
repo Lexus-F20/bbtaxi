@@ -520,7 +520,7 @@ class _MarkerDetailScreenState extends State<MarkerDetailScreen> {
                                       : ClipRRect(
                                           borderRadius: BorderRadius.circular(8),
                                           child: CachedNetworkImage(
-                                            imageUrl: url,
+                                            imageUrl: normalizeMediaUrl(url),
                                             fit: BoxFit.cover,
                                             placeholder: (_, __) => const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
                                             errorWidget: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white38),

@@ -649,7 +649,7 @@ class _MessageBubble extends StatelessWidget {
                         ),
                       )
                     : CachedNetworkImage(
-                        imageUrl: message.mediaUrl!,
+                        imageUrl: normalizeMediaUrl(message.mediaUrl!),
                         width: 200,
                         fit: BoxFit.cover,
                         placeholder: (_, __) => const SizedBox(

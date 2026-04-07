@@ -2,17 +2,19 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../services/api_service.dart';
 import '../services/media_service.dart';
 
 /// Открыть фото или видео на весь экран.
 /// Фото и видео кешируются — при повторном открытии загружаются с диска.
 void openMediaViewer(BuildContext context, String url) {
+  final safeUrl = normalizeMediaUrl(url);
   Navigator.push(
     context,
     MaterialPageRoute(
-      builder: (_) => MediaService.isVideo(url)
-          ? _VideoPlayerScreen(videoUrl: url)
-          : _FullScreenImageScreen(imageUrl: url),
+      builder: (_) => MediaService.isVideo(safeUrl)
+          ? _VideoPlayerScreen(videoUrl: safeUrl)
+          : _FullScreenImageScreen(imageUrl: safeUrl),
     ),
   );
 }

@@ -55,10 +55,12 @@ router.post('/', upload.single('file'), async (req, res) => {
 
     console.log(`[upload] Сохранено в Storage: ${fileName}`);
 
-    // Прямой URL Firebase Storage — работает без IAM и без Railway прокси
-    // encodeURIComponent кодирует / как %2F — Firebase Storage API требует этого
-    const encodedPath = encodeURIComponent(fileName);
-    const mediaUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodedPath}?alt=media&token=${downloadToken}`;
+    // Отдаём URL через наш прокси /media/* — он стримит файл через Admin SDK,
+    // обходит Firebase Security Rules и App Check без каких-либо IAM-разрешений.
+    const host = process.env.RAILWAY_PUBLIC_DOMAIN
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+      : `${req.protocol}://${req.get('host')}`;
+    const mediaUrl = `${host}/media/${fileName}`;
 
     console.log(`[upload] URL: ${mediaUrl}`);
 
