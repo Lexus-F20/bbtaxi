@@ -102,11 +102,11 @@ app.get('/version', (req, res) => {
   });
 });
 
-// Стримит медиафайлы (фото/видео) из Firebase Storage без IAM-прав.
-// URL формируется в /upload: /media/ENCODED_PATH
-// Публичный эндпоинт — авторизация не нужна (URL известен только приложению).
+// Отдаёт медиафайлы из Firebase Storage через Admin SDK.
+// Скачивает файл целиком в буфер и отдаёт одним ответом —
+// надёжнее для Flutter чем pipe() (нет проблем с незакрытым потоком).
 app.get('/media/*', async (req, res) => {
-  const storagePath = req.params[0]; // путь без кодирования: chat/1234.jpg
+  const storagePath = req.params[0];
   console.log(`[media] Запрос: ${storagePath}`);
   try {
     const admin = require('./config/firebase');
@@ -118,17 +118,17 @@ app.get('/media/*', async (req, res) => {
       return res.status(404).json({ error: 'Файл не найден' });
     }
 
-    const [metadata] = await file.getMetadata();
-    res.setHeader('Content-Type', metadata.contentType || 'application/octet-stream');
-    res.setHeader('Cache-Control', 'public, max-age=31536000'); // кеш 1 год
-    if (metadata.size) res.setHeader('Content-Length', metadata.size);
+    const [[metadata], [buffer]] = await Promise.all([
+      file.getMetadata(),
+      file.download(),
+    ]);
 
-    file.createReadStream()
-      .on('error', (err) => {
-        console.error('Ошибка стриминга медиа:', err.message);
-        if (!res.headersSent) res.status(500).json({ error: 'Ошибка стриминга' });
-      })
-      .pipe(res);
+    console.log(`[media] Отправка: ${storagePath} (${buffer.length} байт)`);
+
+    res.setHeader('Content-Type', metadata.contentType || 'application/octet-stream');
+    res.setHeader('Content-Length', buffer.length);
+    res.setHeader('Cache-Control', 'public, max-age=31536000');
+    res.end(buffer);
   } catch (e) {
     console.error('Ошибка /media:', e.message);
     if (!res.headersSent) res.status(500).json({ error: e.message });
