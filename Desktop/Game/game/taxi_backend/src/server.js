@@ -102,10 +102,9 @@ app.get('/version', (req, res) => {
   });
 });
 
-// Отдаёт медиафайлы из Firebase Storage через Admin SDK.
-// Скачивает файл целиком в буфер и отдаёт одним ответом —
-// надёжнее для Flutter чем pipe(): нет проблем с незакрытым потоком,
-// не ставим Content-Length (Railway может gzip-сжать, тогда размер не совпадёт).
+// Отдаёт медиафайлы из Firebase Storage через Admin SDK — стриминг.
+// Content-Length из метаданных + no-transform запрещают Railway gzip-сжимать тело,
+// поэтому размер заголовка совпадает с реальным и Flutter не зависает.
 app.get('/media/*', async (req, res) => {
   const storagePath = req.params[0];
   console.log(`[media] Запрос: ${storagePath}`);
@@ -119,16 +118,27 @@ app.get('/media/*', async (req, res) => {
       return res.status(404).json({ error: 'Файл не найден' });
     }
 
-    const [[metadata], [buffer]] = await Promise.all([
-      file.getMetadata(),
-      file.download(),
-    ]);
-
-    console.log(`[media] Отправка: ${storagePath} (${buffer.length} байт)`);
+    const [metadata] = await file.getMetadata();
 
     res.setHeader('Content-Type', metadata.contentType || 'application/octet-stream');
-    res.setHeader('Cache-Control', 'no-store');
-    res.end(buffer);
+    // no-transform запрещает промежуточным прокси (Railway) сжимать тело —
+    // иначе Content-Length не совпадёт с реальным размером и Flutter зависнет.
+    res.setHeader('Cache-Control', 'no-store, no-transform');
+    if (metadata.size) {
+      res.setHeader('Content-Length', metadata.size);
+    }
+
+    file.createReadStream()
+      .on('error', (err) => {
+        console.error('Ошибка стрима:', err);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Ошибка загрузки файла' });
+        } else {
+          res.destroy(err);
+        }
+      })
+      .pipe(res);
+
   } catch (e) {
     console.error('Ошибка /media:', e.message);
     if (!res.headersSent) res.status(500).json({ error: e.message });
