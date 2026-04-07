@@ -87,35 +87,50 @@ app.get('/health', (req, res) => {
 
 // Версия приложения для автообновления
 app.get('/version', (req, res) => {
-  const hasApk = !!process.env.APK_STORAGE_PATH;
+  const storagePath = process.env.APK_STORAGE_PATH;
+  let apkUrl = process.env.APK_URL || null;
+  if (storagePath) {
+    // Используем наш прокси — он стримит файл напрямую через Admin SDK
+    const host = process.env.RAILWAY_PUBLIC_DOMAIN
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+      : `${req.protocol}://${req.get('host')}`;
+    apkUrl = `${host}/apk`;
+  }
   res.json({
     version: process.env.APP_VERSION || '1.0.0',
-    // Если задан путь в Storage — отдаём наш прокси-эндпоинт, иначе прямую ссылку
-    apk_url: hasApk
-      ? `${req.protocol}://${req.get('host')}/apk`
-      : (process.env.APK_URL || null),
+    apk_url: apkUrl,
   });
 });
 
-// Скачать APK — генерирует свежую подписанную ссылку через Firebase Admin и делает redirect.
+// Скачать APK — стримит файл из Firebase Storage через Admin SDK.
+// Обходит правила безопасности Storage и не требует IAM signed URL.
 // Установите в Railway: APK_STORAGE_PATH=apk/app-release.apk
 app.get('/apk', async (req, res) => {
-  const storagePath = process.env.APK_STORAGE_PATH;
-  if (!storagePath) {
-    return res.status(404).json({ error: 'APK_STORAGE_PATH не задан' });
-  }
+  const storagePath = process.env.APK_STORAGE_PATH || 'apk/app-release.apk';
   try {
     const admin = require('./config/firebase');
     const bucket = admin.storage().bucket();
     const file = bucket.file(storagePath);
-    const [signedUrl] = await file.getSignedUrl({
-      action: 'read',
-      expires: Date.now() + 30 * 60 * 1000, // 30 минут
-    });
-    return res.redirect(302, signedUrl);
+
+    const [exists] = await file.exists();
+    if (!exists) {
+      return res.status(404).json({ error: 'APK не найден в Storage' });
+    }
+
+    const [metadata] = await file.getMetadata();
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    res.setHeader('Content-Disposition', 'attachment; filename="app-release.apk"');
+    if (metadata.size) res.setHeader('Content-Length', metadata.size);
+
+    file.createReadStream()
+      .on('error', (err) => {
+        console.error('Ошибка стриминга APK:', err.message);
+        if (!res.headersSent) res.status(500).json({ error: 'Ошибка загрузки' });
+      })
+      .pipe(res);
   } catch (e) {
-    console.error('Ошибка генерации APK URL:', e.message);
-    return res.status(500).json({ error: 'Не удалось получить ссылку на APK' });
+    console.error('Ошибка /apk:', e.message);
+    if (!res.headersSent) res.status(500).json({ error: e.message });
   }
 });
 
