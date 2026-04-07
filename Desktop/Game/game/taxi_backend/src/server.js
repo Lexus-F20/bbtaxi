@@ -105,8 +105,8 @@ app.get('/version', (req, res) => {
 // Стримит медиафайлы (фото/видео) из Firebase Storage без IAM-прав.
 // URL формируется в /upload: /media/ENCODED_PATH
 // Публичный эндпоинт — авторизация не нужна (URL известен только приложению).
-app.get('/media/:filePath(*)', async (req, res) => {
-  const storagePath = decodeURIComponent(req.params.filePath);
+app.get('/media/*', async (req, res) => {
+  const storagePath = decodeURIComponent(req.params[0]);
   try {
     const admin = require('./config/firebase');
     const bucket = admin.storage().bucket();
