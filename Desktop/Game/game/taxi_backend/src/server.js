@@ -102,70 +102,37 @@ app.get('/version', (req, res) => {
   });
 });
 
+// Отдаёт медиафайлы из Firebase Storage через Admin SDK.
+// Скачивает файл целиком в буфер и отдаёт одним ответом —
+// надёжнее для Flutter чем pipe(): нет проблем с незакрытым потоком,
+// не ставим Content-Length (Railway может gzip-сжать, тогда размер не совпадёт).
 app.get('/media/*', async (req, res) => {
-
   const storagePath = req.params[0];
-
   console.log(`[media] Запрос: ${storagePath}`);
-
-
-
   try {
-
     const admin = require('./config/firebase');
-
     const bucket = admin.storage().bucket();
-
     const file = bucket.file(storagePath);
 
-
-
     const [exists] = await file.exists();
-
     if (!exists) {
-
       return res.status(404).json({ error: 'Файл не найден' });
-
     }
 
+    const [[metadata], [buffer]] = await Promise.all([
+      file.getMetadata(),
+      file.download(),
+    ]);
 
-
-    const [metadata] = await file.getMetadata();
-
-
+    console.log(`[media] Отправка: ${storagePath} (${buffer.length} байт)`);
 
     res.setHeader('Content-Type', metadata.contentType || 'application/octet-stream');
-
     res.setHeader('Cache-Control', 'no-store');
-
-
-
-    file.createReadStream()
-
-      .on('error', (err) => {
-
-        console.error('Ошибка стрима:', err);
-
-        if (!res.headersSent) {
-
-          res.status(500).json({ error: 'Ошибка загрузки файла' });
-
-        }
-
-      })
-
-      .pipe(res);
-
-
-
+    res.end(buffer);
   } catch (e) {
-
     console.error('Ошибка /media:', e.message);
-
     if (!res.headersSent) res.status(500).json({ error: e.message });
-
   }
-
 });
 
 // Скачать APK — стримит файл из Firebase Storage через Admin SDK.
