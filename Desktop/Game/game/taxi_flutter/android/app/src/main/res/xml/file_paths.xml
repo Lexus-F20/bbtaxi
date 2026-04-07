@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <!-- Временная директория кэша — используется для хранения скачанного APK -->
+    <!-- Временная директория кэша -->
     <cache-path name="cache" path="." />
+    <!-- Внешнее хранилище приложения (Downloads) — для DownloadManager -->
+    <external-files-path name="downloads" path="Downloads/" />
 </paths>

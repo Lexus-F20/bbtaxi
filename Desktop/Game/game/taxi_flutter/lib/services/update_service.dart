@@ -1,9 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
 
 import 'api_service.dart';
 
@@ -69,7 +67,7 @@ class UpdateService {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
-              _downloadAndInstall(context, apkUrl);
+              _startDownload(context, apkUrl);
             },
             child: const Text('Обновить'),
           ),
@@ -78,77 +76,24 @@ class UpdateService {
     );
   }
 
-  static Future<void> _downloadAndInstall(
+  /// Запускает загрузку через Android DownloadManager.
+  /// Система показывает уведомление с прогрессом, скоростью и размером файла —
+  /// точно как при загрузке из браузера. После завершения открывает установщик.
+  static Future<void> _startDownload(
       BuildContext context, String apkUrl) async {
-    // Notifier для обновления прогресса внутри диалога
-    final progressNotifier = ValueNotifier<_DlProgress>(const _DlProgress(0, 0));
-
-    // Показываем диалог с прогресс-баром
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          title: const Text('Загрузка обновления'),
-          content: ValueListenableBuilder<_DlProgress>(
-            valueListenable: progressNotifier,
-            builder: (_, prog, __) => Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                LinearProgressIndicator(
-                  value: prog.total > 0 ? prog.received / prog.total : null,
-                  backgroundColor: Colors.white12,
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  prog.total > 0
-                      ? '${_mb(prog.received)} МБ из ${_mb(prog.total)} МБ'
-                      : 'Подключение...',
-                  style: const TextStyle(fontSize: 13),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-
     try {
-      final req = http.Request('GET', Uri.parse(apkUrl));
-      final streamed = await req.send().timeout(const Duration(minutes: 10));
+      await _channel.invokeMethod('downloadAndInstall', {'url': apkUrl});
 
-      if (streamed.statusCode != 200) {
-        throw Exception('HTTP ${streamed.statusCode}');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Загрузка началась — смотрите уведомление'),
+            backgroundColor: Colors.blue,
+            duration: Duration(seconds: 4),
+          ),
+        );
       }
-
-      final total = streamed.contentLength ?? 0;
-      var received = 0;
-      final buffer = <int>[];
-
-      // Читаем чанками и обновляем прогресс
-      await for (final chunk in streamed.stream) {
-        buffer.addAll(chunk);
-        received += chunk.length;
-        progressNotifier.value = _DlProgress(received, total);
-      }
-
-      // Сохраняем APK во временную папку
-      final tmpDir = await getTemporaryDirectory();
-      final apkFile = File('${tmpDir.path}/bbdron_update.apk');
-      await apkFile.writeAsBytes(buffer);
-
-      // Закрываем диалог прогресса
-      if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
-      progressNotifier.dispose();
-
-      // Открываем системный установщик Android
-      await _channel.invokeMethod('installApk', apkFile.path);
     } catch (e) {
-      if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
-      progressNotifier.dispose();
-
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -159,12 +104,4 @@ class UpdateService {
       }
     }
   }
-
-  static String _mb(int bytes) => (bytes / 1048576).toStringAsFixed(1);
-}
-
-class _DlProgress {
-  final int received;
-  final int total;
-  const _DlProgress(this.received, this.total);
 }
