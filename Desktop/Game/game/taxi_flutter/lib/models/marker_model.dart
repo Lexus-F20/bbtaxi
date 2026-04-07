@@ -1,4 +1,5 @@
 // Модель данных маркера на карте
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -60,11 +61,21 @@ class MarkerModel {
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : DateTime.now(),
-      mediaUrls: (json['media_urls'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList() ??
-          [],
+      mediaUrls: _parseMediaUrls(json['media_urls']),
     );
+  }
+
+  /// Парсит media_urls независимо от того, пришло как List или как JSON-строка (TEXT колонка в PG)
+  static List<String> _parseMediaUrls(dynamic value) {
+    if (value == null) return [];
+    if (value is List) return value.map((e) => e.toString()).toList();
+    if (value is String && value.isNotEmpty) {
+      try {
+        final parsed = jsonDecode(value);
+        if (parsed is List) return parsed.map((e) => e.toString()).toList();
+      } catch (_) {}
+    }
+    return [];
   }
 
   Map<String, dynamic> toJson() {

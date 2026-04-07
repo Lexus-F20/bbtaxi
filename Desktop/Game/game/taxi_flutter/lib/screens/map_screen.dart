@@ -1056,53 +1056,164 @@ class _MapScreenState extends State<MapScreen> {
   void _showCompleteDialog(int markerId) {
     final reportController = TextEditingController();
     final formKey = GlobalKey<FormState>();
+    final List<XFile> pickedMedia = [];
+    bool isUploading = false;
 
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text('Отчёт о выполнении', style: TextStyle(color: Colors.white)),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            controller: reportController,
-            style: const TextStyle(color: Colors.white),
-            maxLines: 3,
-            autofocus: true,
-            decoration: const InputDecoration(
-              hintText: 'Опишите выполненную работу...',
-              hintStyle: TextStyle(color: Colors.white38),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF1E1E1E),
+          title: const Text('Отчёт о выполнении', style: TextStyle(color: Colors.white)),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: reportController,
+                    style: const TextStyle(color: Colors.white),
+                    maxLines: 3,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: 'Опишите выполненную работу...',
+                      hintStyle: TextStyle(color: Colors.white38),
+                    ),
+                    validator: (value) =>
+                        value == null || value.trim().isEmpty ? 'Отчёт обязателен' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.photo_library, size: 16),
+                          label: const Text('Галерея', style: TextStyle(fontSize: 12)),
+                          style: OutlinedButton.styleFrom(foregroundColor: Colors.white54),
+                          onPressed: () async {
+                            final files = await MediaService.pickMedia(ImageSource.gallery);
+                            setDialogState(() => pickedMedia.addAll(files));
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white54,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          minimumSize: Size.zero,
+                        ),
+                        onPressed: () async {
+                          final files = await MediaService.pickMedia(ImageSource.camera);
+                          setDialogState(() => pickedMedia.addAll(files));
+                        },
+                        child: const Icon(Icons.photo_camera, size: 18),
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white54,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          minimumSize: Size.zero,
+                        ),
+                        onPressed: () async {
+                          final files = await MediaService.pickVideoFromCamera();
+                          setDialogState(() => pickedMedia.addAll(files));
+                        },
+                        child: const Icon(Icons.videocam, size: 18),
+                      ),
+                    ],
+                  ),
+                  if (pickedMedia.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 70,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: pickedMedia.length,
+                        itemBuilder: (_, i) => Stack(
+                          children: [
+                            Container(
+                              margin: const EdgeInsets.only(right: 6),
+                              width: 70,
+                              height: 70,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                color: const Color(0xFF2A2A2A),
+                              ),
+                              child: MediaService.isVideo(pickedMedia[i].path)
+                                  ? const Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.videocam, color: Colors.white70, size: 28),
+                                        Text('видео', style: TextStyle(color: Colors.white54, fontSize: 10)),
+                                      ],
+                                    )
+                                  : ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.file(File(pickedMedia[i].path), fit: BoxFit.cover),
+                                    ),
+                            ),
+                            Positioned(
+                              top: 0, right: 6,
+                              child: GestureDetector(
+                                onTap: () => setDialogState(() => pickedMedia.removeAt(i)),
+                                child: const CircleAvatar(
+                                  radius: 10,
+                                  backgroundColor: Colors.red,
+                                  child: Icon(Icons.close, size: 12, color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Text('${pickedMedia.length} файл(ов)', style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                  ],
+                ],
+              ),
             ),
-            validator: (value) =>
-                value == null || value.trim().isEmpty ? 'Отчёт обязателен' : null,
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Отмена', style: TextStyle(color: Colors.white54)),
+            ),
+            ElevatedButton.icon(
+              icon: isUploading
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.check_circle),
+              label: Text(isUploading ? 'Загрузка...' : 'Завершить'),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+              onPressed: isUploading ? null : () async {
+                if (!formKey.currentState!.validate()) return;
+                setDialogState(() => isUploading = true);
+
+                List<String> mediaUrls = [];
+                if (pickedMedia.isNotEmpty) {
+                  mediaUrls = await MediaService.uploadFiles(pickedMedia, 'markers/reports');
+                }
+
+                Navigator.pop(dialogContext);
+                final markersProvider = context.read<MarkersProvider>();
+                final success = await markersProvider.completeMarker(
+                  markerId,
+                  reportController.text.trim(),
+                  mediaUrls: mediaUrls.isNotEmpty ? mediaUrls : null,
+                );
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(success ? 'Маркер выполнен!' : markersProvider.errorMessage ?? 'Ошибка'),
+                    backgroundColor: success ? Colors.green : Colors.red,
+                  ));
+                  if (!success) markersProvider.clearError();
+                }
+              },
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Отмена', style: TextStyle(color: Colors.white54)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-            onPressed: () async {
-              if (!formKey.currentState!.validate()) return;
-              Navigator.pop(dialogContext);
-              final markersProvider = context.read<MarkersProvider>();
-              final success = await markersProvider.completeMarker(
-                markerId,
-                reportController.text.trim(),
-              );
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(success ? 'Маркер выполнен!' : markersProvider.errorMessage ?? 'Ошибка'),
-                  backgroundColor: success ? Colors.green : Colors.red,
-                ));
-                if (!success) markersProvider.clearError();
-              }
-            },
-            child: const Text('Завершить'),
-          ),
-        ],
       ),
     );
   }

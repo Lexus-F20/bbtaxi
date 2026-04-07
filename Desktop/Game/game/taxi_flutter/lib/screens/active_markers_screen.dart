@@ -638,17 +638,31 @@ class _MarkerCard extends StatelessWidget {
                           },
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.camera_alt, size: 16),
-                          label: const Text('Камера', style: TextStyle(fontSize: 12)),
-                          style: OutlinedButton.styleFrom(foregroundColor: Colors.white54),
-                          onPressed: () async {
-                            final files = await MediaService.pickMedia(ImageSource.camera);
-                            setDialogState(() => pickedMedia.addAll(files));
-                          },
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white54,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          minimumSize: Size.zero,
                         ),
+                        onPressed: () async {
+                          final files = await MediaService.pickMedia(ImageSource.camera);
+                          setDialogState(() => pickedMedia.addAll(files));
+                        },
+                        child: const Icon(Icons.photo_camera, size: 18),
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white54,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          minimumSize: Size.zero,
+                        ),
+                        onPressed: () async {
+                          final files = await MediaService.pickVideoFromCamera();
+                          setDialogState(() => pickedMedia.addAll(files));
+                        },
+                        child: const Icon(Icons.videocam, size: 18),
                       ),
                     ],
                   ),
@@ -667,11 +681,20 @@ class _MarkerCard extends StatelessWidget {
                               height: 70,
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(8),
-                                image: DecorationImage(
-                                  image: FileImage(File(pickedMedia[i].path)),
-                                  fit: BoxFit.cover,
-                                ),
+                                color: const Color(0xFF2A2A2A),
                               ),
+                              child: MediaService.isVideo(pickedMedia[i].path)
+                                  ? const Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.videocam, color: Colors.white70, size: 28),
+                                        Text('видео', style: TextStyle(color: Colors.white54, fontSize: 10)),
+                                      ],
+                                    )
+                                  : ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.file(File(pickedMedia[i].path), fit: BoxFit.cover),
+                                    ),
                             ),
                             Positioned(
                               top: 0, right: 6,

@@ -14,6 +14,7 @@ import '../services/media_service.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../utils/coordinate_utils.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../utils/media_viewer.dart';
 import 'user_profile_screen.dart';
 
@@ -101,17 +102,31 @@ class _MarkerDetailScreenState extends State<MarkerDetailScreen> {
                           },
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.camera_alt, size: 16),
-                          label: const Text('Камера', style: TextStyle(fontSize: 12)),
-                          style: OutlinedButton.styleFrom(foregroundColor: Colors.white54),
-                          onPressed: () async {
-                            final files = await MediaService.pickMedia(ImageSource.camera);
-                            setDialogState(() => pickedMedia.addAll(files));
-                          },
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white54,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          minimumSize: Size.zero,
                         ),
+                        onPressed: () async {
+                          final files = await MediaService.pickMedia(ImageSource.camera);
+                          setDialogState(() => pickedMedia.addAll(files));
+                        },
+                        child: const Icon(Icons.photo_camera, size: 18),
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white54,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          minimumSize: Size.zero,
+                        ),
+                        onPressed: () async {
+                          final files = await MediaService.pickVideoFromCamera();
+                          setDialogState(() => pickedMedia.addAll(files));
+                        },
+                        child: const Icon(Icons.videocam, size: 18),
                       ),
                     ],
                   ),
@@ -130,11 +145,20 @@ class _MarkerDetailScreenState extends State<MarkerDetailScreen> {
                               height: 70,
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(8),
-                                image: DecorationImage(
-                                  image: FileImage(File(pickedMedia[i].path)),
-                                  fit: BoxFit.cover,
-                                ),
+                                color: const Color(0xFF2A2A2A),
                               ),
+                              child: MediaService.isVideo(pickedMedia[i].path)
+                                  ? const Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.videocam, color: Colors.white70, size: 28),
+                                        Text('видео', style: TextStyle(color: Colors.white54, fontSize: 10)),
+                                      ],
+                                    )
+                                  : ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.file(File(pickedMedia[i].path), fit: BoxFit.cover),
+                                    ),
                             ),
                             Positioned(
                               top: 0, right: 6,
@@ -462,7 +486,7 @@ class _MarkerDetailScreenState extends State<MarkerDetailScreen> {
                               final url = _marker.mediaUrls[i];
                               final isVideo = MediaService.isVideo(url);
                               return GestureDetector(
-                                onTap: isVideo ? null : () => openImageViewer(context, url),
+                                onTap: () => openMediaViewer(context, url),
                                 child: Container(
                                   margin: const EdgeInsets.only(right: 8),
                                   width: 100,
@@ -472,18 +496,24 @@ class _MarkerDetailScreenState extends State<MarkerDetailScreen> {
                                     color: const Color(0xFF2A2A2A),
                                   ),
                                   child: isVideo
-                                      ? const Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Icon(Icons.play_circle_fill, color: Colors.white, size: 40),
-                                            SizedBox(height: 4),
-                                            Text('Видео', style: TextStyle(color: Colors.white54, fontSize: 11)),
-                                          ],
+                                      ? const ClipRRect(
+                                          borderRadius: BorderRadius.all(Radius.circular(8)),
+                                          child: Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Icon(Icons.play_circle_fill, color: Colors.white, size: 40),
+                                              SizedBox(height: 4),
+                                              Text('Видео', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                                            ],
+                                          ),
                                         )
                                       : ClipRRect(
                                           borderRadius: BorderRadius.circular(8),
-                                          child: Image.network(url, fit: BoxFit.cover,
-                                            errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white38),
+                                          child: CachedNetworkImage(
+                                            imageUrl: url,
+                                            fit: BoxFit.cover,
+                                            placeholder: (_, __) => const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+                                            errorWidget: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white38),
                                           ),
                                         ),
                                 ),
@@ -697,8 +727,15 @@ class _AddMediaButton extends StatefulWidget {
 class _AddMediaButtonState extends State<_AddMediaButton> {
   bool _isUploading = false;
 
-  Future<void> _pick(ImageSource source) async {
-    final files = await MediaService.pickMedia(source);
+  Future<void> _pick(String action) async {
+    List<XFile> files;
+    if (action == 'gallery') {
+      files = await MediaService.pickMedia(ImageSource.gallery);
+    } else if (action == 'camera_photo') {
+      files = await MediaService.pickMedia(ImageSource.camera);
+    } else {
+      files = await MediaService.pickVideoFromCamera();
+    }
     if (files.isEmpty || !mounted) return;
 
     setState(() => _isUploading = true);
@@ -724,18 +761,22 @@ class _AddMediaButtonState extends State<_AddMediaButton> {
     if (_isUploading) {
       return const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2));
     }
-    return PopupMenuButton<ImageSource>(
+    return PopupMenuButton<String>(
       icon: const Icon(Icons.add_photo_alternate, color: Colors.white54, size: 20),
       color: const Color(0xFF2A2A2A),
       onSelected: _pick,
       itemBuilder: (_) => [
         const PopupMenuItem(
-          value: ImageSource.gallery,
+          value: 'gallery',
           child: Row(children: [Icon(Icons.photo_library, color: Colors.white70), SizedBox(width: 8), Text('Галерея', style: TextStyle(color: Colors.white))]),
         ),
         const PopupMenuItem(
-          value: ImageSource.camera,
-          child: Row(children: [Icon(Icons.camera_alt, color: Colors.white70), SizedBox(width: 8), Text('Камера', style: TextStyle(color: Colors.white))]),
+          value: 'camera_photo',
+          child: Row(children: [Icon(Icons.photo_camera, color: Colors.white70), SizedBox(width: 8), Text('Камера (фото)', style: TextStyle(color: Colors.white))]),
+        ),
+        const PopupMenuItem(
+          value: 'camera_video',
+          child: Row(children: [Icon(Icons.videocam, color: Colors.white70), SizedBox(width: 8), Text('Камера (видео)', style: TextStyle(color: Colors.white))]),
         ),
       ],
     );

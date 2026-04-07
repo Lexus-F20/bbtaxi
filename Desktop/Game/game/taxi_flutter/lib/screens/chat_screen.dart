@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../models/marker_model.dart';
 import '../providers/auth_provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../utils/media_viewer.dart';
 import '../services/api_service.dart';
 import '../services/media_service.dart';
@@ -636,24 +637,28 @@ class _MessageBubble extends StatelessWidget {
             Text(message.text, style: const TextStyle(color: Colors.white, fontSize: 15)),
           if (message.mediaUrl != null) ...[
             if (message.text.isNotEmpty) const SizedBox(height: 6),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: MediaService.isVideo(message.mediaUrl!)
-                  ? Container(
-                      width: 200, height: 120, color: Colors.black45,
-                      child: const Center(
-                        child: Icon(Icons.play_circle_fill, color: Colors.white, size: 48),
-                      ),
-                    )
-                  : GestureDetector(
-                      onTap: () => openImageViewer(context, message.mediaUrl!),
-                      child: Image.network(
-                        message.mediaUrl!,
+            GestureDetector(
+              onTap: () => openMediaViewer(context, message.mediaUrl!),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: MediaService.isVideo(message.mediaUrl!)
+                    ? Container(
+                        width: 200, height: 120, color: Colors.black45,
+                        child: const Center(
+                          child: Icon(Icons.play_circle_fill, color: Colors.white, size: 48),
+                        ),
+                      )
+                    : CachedNetworkImage(
+                        imageUrl: message.mediaUrl!,
                         width: 200,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white38),
+                        placeholder: (_, __) => const SizedBox(
+                          width: 200, height: 120,
+                          child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54)),
+                        ),
+                        errorWidget: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white38),
                       ),
-                    ),
+              ),
             ),
           ],
           const SizedBox(height: 4),
@@ -737,6 +742,13 @@ class _ChatInputState extends State<_ChatInput> {
     }
   }
 
+  Future<void> _pickVideo() async {
+    final files = await MediaService.pickVideoFromCamera();
+    if (files.isNotEmpty) {
+      setState(() => _pickedFile = files.first);
+    }
+  }
+
   Future<void> _send() async {
     final text = widget.controller.text.trim();
     if ((text.isEmpty && _pickedFile == null) || widget.isSending || _isUploading) return;
@@ -802,17 +814,23 @@ class _ChatInputState extends State<_ChatInput> {
           ),
           child: Row(
             children: [
-              // Кнопка галереи
+              // Кнопка галереи (фото + видео)
               IconButton(
                 icon: const Icon(Icons.photo_library, color: Colors.white38),
                 iconSize: 24,
                 onPressed: busy ? null : () => _pickMedia(ImageSource.gallery),
               ),
-              // Кнопка камеры
+              // Кнопка камеры (фото)
               IconButton(
-                icon: const Icon(Icons.camera_alt, color: Colors.white38),
+                icon: const Icon(Icons.photo_camera, color: Colors.white38),
                 iconSize: 24,
                 onPressed: busy ? null : () => _pickMedia(ImageSource.camera),
+              ),
+              // Кнопка видео с камеры
+              IconButton(
+                icon: const Icon(Icons.videocam, color: Colors.white38),
+                iconSize: 24,
+                onPressed: busy ? null : _pickVideo,
               ),
               // Поле ввода текста
               Expanded(

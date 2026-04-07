@@ -49,10 +49,27 @@ dependencies:
   # Временная директория для скачивания APK обновления
   path_provider: ^2.1.2
 
+  # Сжатие видео перед загрузкой
+  video_compress: ^3.1.4
+
+  # Кеширование изображений
+  cached_network_image: ^3.3.1
+
+  # Воспроизведение и кеширование видео
+  video_player: ^2.8.6
+  flutter_cache_manager: ^3.3.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "../icon.png"
+  min_sdk_android: 21
 
 flutter:
   uses-material-design: true
