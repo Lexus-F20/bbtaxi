@@ -130,7 +130,7 @@ app.get('/media/*', async (req, res) => {
     // реальный размер станет меньше заголовка и Flutter зависнет навсегда.
     // Без Content-Length Node.js использует Transfer-Encoding: chunked,
     // что корректно обрабатывается любым HTTP-клиентом.
-    res.setHeader('Cache-Control', 'public, max-age=31536000');
+    res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     res.end(buffer);
   } catch (e) {
     console.error('Ошибка /media:', e.message);
