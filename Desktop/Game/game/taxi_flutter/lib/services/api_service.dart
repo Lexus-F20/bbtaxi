@@ -18,16 +18,20 @@ const String kBaseUrl = 'https://bbtaxi-production.up.railway.app';
 /// Новый формат:  https://bbtaxi-production.up.railway.app/media/PATH
 /// Новые URL уже возвращаются в правильном формате — эта функция нужна для совместимости.
 String normalizeMediaUrl(String url) {
+  debugPrint('[normalizeMediaUrl] вход: $url');
   if (url.contains('firebasestorage.googleapis.com')) {
     final uri = Uri.tryParse(url);
     if (uri != null) {
       final parts = uri.path.split('/o/');
       if (parts.length == 2) {
         final decodedPath = Uri.decodeComponent(parts[1].split('?').first);
-        return '$kBaseUrl/media/$decodedPath';
+        final result = '$kBaseUrl/media/$decodedPath';
+        debugPrint('[normalizeMediaUrl] выход (конверсия): $result');
+        return result;
       }
     }
   }
+  debugPrint('[normalizeMediaUrl] выход (без изменений): $url');
   return url;
 }
 
@@ -48,7 +52,8 @@ class ApiService {
         if (_token != null) 'Authorization': 'Bearer $_token',
       };
 
-  String _errorMessage(http.Response response, [String fallback = 'Ошибка сервера']) {
+  String _errorMessage(http.Response response,
+      [String fallback = 'Ошибка сервера']) {
     try {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       return data['error'] as String? ?? fallback;
@@ -180,7 +185,8 @@ class ApiService {
   }
 
   /// Отметить маркер как выполненный с отчётом
-  Future<MarkerModel> completeMarker(int markerId, String report, {List<String>? mediaUrls}) async {
+  Future<MarkerModel> completeMarker(int markerId, String report,
+      {List<String>? mediaUrls}) async {
     final response = await http.put(
       Uri.parse('$kBaseUrl/markers/$markerId/complete'),
       headers: _headers,
@@ -347,7 +353,8 @@ class ApiService {
   }
 
   /// Отправить личное сообщение
-  Future<ChatMessage> sendDirectMessage(int receiverId, String text, {String? mediaUrl}) async {
+  Future<ChatMessage> sendDirectMessage(int receiverId, String text,
+      {String? mediaUrl}) async {
     final body = <String, dynamic>{'text': text};
     if (mediaUrl != null) body['media_url'] = mediaUrl;
     final response = await http.post(
@@ -514,7 +521,8 @@ class ApiService {
 
   /// Таблица рейтинга всех пользователей
   Future<List<Map<String, dynamic>>> getRatings() async {
-    final response = await http.get(Uri.parse('$kBaseUrl/ratings'), headers: _headers);
+    final response =
+        await http.get(Uri.parse('$kBaseUrl/ratings'), headers: _headers);
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode == 200) {
       return List<Map<String, dynamic>>.from(data['ratings'] as List);
@@ -525,10 +533,13 @@ class ApiService {
   // ========== МАРШРУТЫ ==========
 
   Future<List<RouteModel>> getRoutes() async {
-    final response = await http.get(Uri.parse('$kBaseUrl/routes'), headers: _headers);
+    final response =
+        await http.get(Uri.parse('$kBaseUrl/routes'), headers: _headers);
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode == 200) {
-      return (data['routes'] as List).map((r) => RouteModel.fromJson(r)).toList();
+      return (data['routes'] as List)
+          .map((r) => RouteModel.fromJson(r))
+          .toList();
     }
     throw ApiException(data['error'] ?? 'Ошибка получения маршрутов');
   }
@@ -560,7 +571,8 @@ class ApiService {
   }
 
   /// Изменить рейтинг пользователя (только admin)
-  Future<UserModel> adjustRating(int userId, int delta, {String? reason}) async {
+  Future<UserModel> adjustRating(int userId, int delta,
+      {String? reason}) async {
     final response = await http.put(
       Uri.parse('$kBaseUrl/admin/users/$userId/rating'),
       headers: _headers,
@@ -574,12 +586,15 @@ class ApiService {
   /// Все маркеры (включая принятые) для списка активных заказов
   Future<List<MarkerModel>> getAllActiveMarkers() async {
     final response = await http.get(
-      Uri.parse('$kBaseUrl/markers').replace(queryParameters: {'status': 'pending'}),
+      Uri.parse('$kBaseUrl/markers')
+          .replace(queryParameters: {'status': 'pending'}),
       headers: _headers,
     );
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode == 200) {
-      return (data['markers'] as List).map((m) => MarkerModel.fromJson(m)).toList();
+      return (data['markers'] as List)
+          .map((m) => MarkerModel.fromJson(m))
+          .toList();
     }
     throw ApiException(data['error'] ?? 'Ошибка получения маркеров');
   }

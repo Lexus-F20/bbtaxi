@@ -47,35 +47,33 @@ class _BackendImageState extends State<BackendImage> {
 
   Future<Uint8List> _load() async {
     final url = normalizeMediaUrl(widget.url);
+    debugPrint('[BackendImage] Загрузка: $url');
+
+    // In-memory кеш — мгновенно, без I/O
     if (BackendImage._cache.containsKey(url)) {
+      debugPrint('[BackendImage] Найдено в кеше: $url');
       return BackendImage._cache[url]!;
     }
 
-    // Сначала пробуем взять из дискового кэша.
-    final fileInfo = await MediaCache.instance.getFileFromCache(url);
-    Uint8List bytes;
-    if (fileInfo != null) {
-      bytes = await fileInfo.file.readAsBytes();
-    } else {
-      // Фолбэк через прямой http для нестандартных ответов сервера.
-      final response = await http
-          .get(Uri.parse(url))
-          .timeout(const Duration(seconds: 30));
+    // Прямой HTTP-запрос. Дисковый кэш (flutter_cache_manager) намеренно
+    // обходим: его SQLite-база может зависнуть если в ней остались
+    // сломанные записи от предыдущих сбоев соединения.
+    try {
+      final response =
+          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 30));
+      debugPrint('[BackendImage] HTTP ${response.statusCode} для $url');
       if (response.statusCode != 200) {
+        debugPrint('[BackendImage] Тело ответа: ${response.body}');
         throw Exception('HTTP ${response.statusCode}');
       }
-      bytes = response.bodyBytes;
-
-      // Пишем в дисковый кэш вручную, чтобы повторно открывалось офлайн.
-      await MediaCache.instance.putFile(
-        url,
-        bytes,
-        fileExtension: _extFromUrl(url),
-      );
+      final bytes = response.bodyBytes;
+      BackendImage._cache[url] = bytes;
+      debugPrint('[BackendImage] Загружено ${bytes.length} байт');
+      return bytes;
+    } catch (e) {
+      debugPrint('[BackendImage] Ошибка загрузки: $e');
+      rethrow;
     }
-
-    BackendImage._cache[url] = bytes;
-    return bytes;
   }
 
   String _extFromUrl(String url) {
