@@ -106,7 +106,8 @@ app.get('/version', (req, res) => {
 // URL формируется в /upload: /media/ENCODED_PATH
 // Публичный эндпоинт — авторизация не нужна (URL известен только приложению).
 app.get('/media/*', async (req, res) => {
-  const storagePath = decodeURIComponent(req.params[0]);
+  const storagePath = req.params[0]; // путь без кодирования: chat/1234.jpg
+  console.log(`[media] Запрос: ${storagePath}`);
   try {
     const admin = require('./config/firebase');
     const bucket = admin.storage().bucket();

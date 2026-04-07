@@ -49,10 +49,12 @@ router.post('/', upload.single('file'), async (req, res) => {
     console.log(`[upload] Сохранено в Storage: ${fileName}`);
 
     // URL через наш прокси /media — работает без signBlob
+    // fileName уже безопасен (только буквы/цифры/дефис/слэш)
+    // НЕ используем encodeURIComponent — nginx блокирует %2F в пути
     const host = process.env.RAILWAY_PUBLIC_DOMAIN
       ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
       : `${req.protocol}://${req.get('host')}`;
-    const mediaUrl = `${host}/media/${encodeURIComponent(fileName)}`;
+    const mediaUrl = `${host}/media/${fileName}`;
 
     return res.json({ url: mediaUrl });
   } catch (error) {
