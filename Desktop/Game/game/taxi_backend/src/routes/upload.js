@@ -56,6 +56,8 @@ router.post('/', upload.single('file'), async (req, res) => {
       : `${req.protocol}://${req.get('host')}`;
     const mediaUrl = `${host}/media/${fileName}`;
 
+    console.log(`[upload] URL: ${mediaUrl}`);
+
     return res.json({ url: mediaUrl });
   } catch (error) {
     console.error('[upload] Ошибка:', error.message);
