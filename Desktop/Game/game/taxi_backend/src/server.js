@@ -102,6 +102,38 @@ app.get('/version', (req, res) => {
   });
 });
 
+// Стримит медиафайлы (фото/видео) из Firebase Storage без IAM-прав.
+// URL формируется в /upload: /media/ENCODED_PATH
+// Публичный эндпоинт — авторизация не нужна (URL известен только приложению).
+app.get('/media/:filePath(*)', async (req, res) => {
+  const storagePath = decodeURIComponent(req.params.filePath);
+  try {
+    const admin = require('./config/firebase');
+    const bucket = admin.storage().bucket();
+    const file = bucket.file(storagePath);
+
+    const [exists] = await file.exists();
+    if (!exists) {
+      return res.status(404).json({ error: 'Файл не найден' });
+    }
+
+    const [metadata] = await file.getMetadata();
+    res.setHeader('Content-Type', metadata.contentType || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'public, max-age=31536000'); // кеш 1 год
+    if (metadata.size) res.setHeader('Content-Length', metadata.size);
+
+    file.createReadStream()
+      .on('error', (err) => {
+        console.error('Ошибка стриминга медиа:', err.message);
+        if (!res.headersSent) res.status(500).json({ error: 'Ошибка стриминга' });
+      })
+      .pipe(res);
+  } catch (e) {
+    console.error('Ошибка /media:', e.message);
+    if (!res.headersSent) res.status(500).json({ error: e.message });
+  }
+});
+
 // Скачать APK — стримит файл из Firebase Storage через Admin SDK.
 // Обходит правила безопасности Storage и не требует IAM signed URL.
 // Установите в Railway: APK_STORAGE_PATH=apk/app-release.apk
