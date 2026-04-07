@@ -73,6 +73,10 @@ CREATE TABLE IF NOT EXISTS messages (
   sender_id INTEGER REFERENCES users(id),
   receiver_id INTEGER REFERENCES users(id),     -- NULL = общий чат
   text TEXT NOT NULL,
+  media_url TEXT,
+  edited_at TIMESTAMP,
+  is_deleted BOOLEAN DEFAULT false,
+  forwarded_from_id INTEGER REFERENCES messages(id),
   is_read BOOLEAN DEFAULT false,
   created_at TIMESTAMP DEFAULT NOW()
 );

@@ -362,6 +362,47 @@ class ApiService {
     throw ApiException(data['error'] ?? 'Ошибка отправки сообщения');
   }
 
+  /// Редактировать отправленное сообщение
+  Future<ChatMessage> editMessage(int messageId, String text) async {
+    final response = await http.put(
+      Uri.parse('$kBaseUrl/chat/messages/$messageId'),
+      headers: _headers,
+      body: jsonEncode({'text': text}),
+    );
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode == 200) {
+      return ChatMessage.fromJson(data['message']);
+    }
+    throw ApiException(data['error'] ?? 'Ошибка редактирования сообщения');
+  }
+
+  /// Удалить отправленное сообщение (soft-delete)
+  Future<ChatMessage> deleteMessage(int messageId) async {
+    final response = await http.delete(
+      Uri.parse('$kBaseUrl/chat/messages/$messageId'),
+      headers: _headers,
+    );
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode == 200) {
+      return ChatMessage.fromJson(data['message']);
+    }
+    throw ApiException(data['error'] ?? 'Ошибка удаления сообщения');
+  }
+
+  /// Переслать сообщение в общий чат или личный (receiverId = null => общий)
+  Future<ChatMessage> forwardMessage(int messageId, {int? receiverId}) async {
+    final response = await http.post(
+      Uri.parse('$kBaseUrl/chat/messages/$messageId/forward'),
+      headers: _headers,
+      body: jsonEncode({'receiver_id': receiverId}),
+    );
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode == 201) {
+      return ChatMessage.fromJson(data['message']);
+    }
+    throw ApiException(data['error'] ?? 'Ошибка пересылки сообщения');
+  }
+
   /// Добавить медиафайлы к существующему маркеру
   Future<void> addMarkerMedia(int markerId, List<String> mediaUrls) async {
     final response = await http.post(

@@ -1,11 +1,14 @@
 // Провайдер маркеров: хранит список маркеров и управляет real-time обновлениями
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/marker_model.dart';
 import '../services/api_service.dart';
 import '../services/socket_service.dart';
 
 class MarkersProvider extends ChangeNotifier {
+  static const _cacheKey = 'map_markers_cache_v1';
   final List<MarkerModel> _markers = [];
   bool _isLoading = false;
   String? _errorMessage;
@@ -23,15 +26,18 @@ class MarkersProvider extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
 
+    await _loadFromCache();
+
     try {
       final markers = await ApiService().getMarkers();
       _markers.clear();
       _markers.addAll(markers);
+      await _saveToCache();
       _subscribeToSocketEvents();
     } on ApiException catch (e) {
-      _errorMessage = e.message;
+      if (_markers.isEmpty) _errorMessage = e.message;
     } catch (e) {
-      _errorMessage = 'Ошибка загрузки маркеров';
+      if (_markers.isEmpty) _errorMessage = 'Ошибка загрузки маркеров';
     }
 
     _isLoading = false;
@@ -60,6 +66,7 @@ class MarkersProvider extends ChangeNotifier {
       // Добавляем сразу (до Socket.io события) для мгновенного отображения
       if (!_markers.any((m) => m.id == marker.id)) {
         _markers.insert(0, marker);
+        _saveToCache();
         notifyListeners();
       }
 
@@ -101,6 +108,7 @@ class MarkersProvider extends ChangeNotifier {
     try {
       await ApiService().completeMarker(markerId, report, mediaUrls: mediaUrls);
       _markers.removeWhere((m) => m.id == markerId);
+      await _saveToCache();
       notifyListeners();
       return true;
     } on ApiException catch (e) {
@@ -120,6 +128,7 @@ class MarkersProvider extends ChangeNotifier {
           mediaUrls: [..._markers[index].mediaUrls, ...mediaUrls],
         );
         _markers[index] = updated;
+        await _saveToCache();
         notifyListeners();
       }
       return true;
@@ -153,6 +162,7 @@ class MarkersProvider extends ChangeNotifier {
       } else {
         _markers.insert(0, updatedMarker);
       }
+      await _saveToCache();
       notifyListeners();
       return true;
     } on ApiException catch (e) {
@@ -170,6 +180,7 @@ class MarkersProvider extends ChangeNotifier {
     socket.onMarkerNew = (marker) {
       if (!_markers.any((m) => m.id == marker.id)) {
         _markers.insert(0, marker);
+        _saveToCache();
         onNewMarker?.call(marker);
         notifyListeners();
       }
@@ -183,18 +194,21 @@ class MarkersProvider extends ChangeNotifier {
       } else {
         _markers.insert(0, updatedMarker);
       }
+      _saveToCache();
       notifyListeners();
     };
 
     // Маркер отклонён — убираем с карты
     socket.onMarkerRejected = (updatedMarker) {
       _markers.removeWhere((m) => m.id == updatedMarker.id);
+      _saveToCache();
       notifyListeners();
     };
 
     // Маркер выполнен — убираем с карты автоматически
     socket.onMarkerDone = (updatedMarker) {
       _markers.removeWhere((m) => m.id == updatedMarker.id);
+      _saveToCache();
       notifyListeners();
     };
 
@@ -206,14 +220,43 @@ class MarkersProvider extends ChangeNotifier {
       } else {
         _markers.insert(0, updatedMarker);
       }
+      _saveToCache();
       notifyListeners();
     };
 
     // Маркер удалён — убираем с карты
     socket.onMarkerDeleted = (id) {
       _markers.removeWhere((m) => m.id == id);
+      _saveToCache();
       notifyListeners();
     };
+  }
+
+  Future<void> _loadFromCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_cacheKey);
+      if (raw == null || raw.isEmpty) return;
+      final list = jsonDecode(raw) as List<dynamic>;
+      final cached = list
+          .whereType<Map<String, dynamic>>()
+          .map(MarkerModel.fromJson)
+          .toList();
+      if (cached.isNotEmpty) {
+        _markers
+          ..clear()
+          ..addAll(cached);
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveToCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = jsonEncode(_markers.map((m) => m.toJson()).toList());
+      await prefs.setString(_cacheKey, raw);
+    } catch (_) {}
   }
 
   void clearError() {
@@ -224,6 +267,7 @@ class MarkersProvider extends ChangeNotifier {
   void clear() {
     _markers.clear();
     _errorMessage = null;
+    SharedPreferences.getInstance().then((p) => p.remove(_cacheKey));
     notifyListeners();
   }
 }

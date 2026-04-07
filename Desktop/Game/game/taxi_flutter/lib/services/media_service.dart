@@ -1,12 +1,16 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
 import 'api_service.dart';
 
 class MediaService {
   static final _picker = ImagePicker();
+  static final _recorder = AudioRecorder();
 
   /// Выбрать медиа из галереи (фото + видео) или сфотографировать.
   static Future<List<XFile>> pickMedia(ImageSource source) async {
@@ -98,5 +102,41 @@ class MediaService {
         lower.contains('.avi') ||
         lower.contains('.mkv') ||
         lower.contains('.webm');
+  }
+
+  /// Является ли путь/URL аудио.
+  static bool isAudio(String url) {
+    final lower = url.toLowerCase();
+    return lower.contains('.m4a') ||
+        lower.contains('.aac') ||
+        lower.contains('.mp3') ||
+        lower.contains('.wav') ||
+        lower.contains('.ogg');
+  }
+
+  static Future<bool> canRecordAudio() => _recorder.hasPermission();
+
+  /// Начать запись голосового сообщения.
+  static Future<String> startVoiceRecording() async {
+    final dir = await getTemporaryDirectory();
+    final path = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    await _recorder.start(
+      const RecordConfig(
+        encoder: AudioEncoder.aacLc,
+        sampleRate: 44100,
+        bitRate: 128000,
+      ),
+      path: path,
+    );
+    return path;
+  }
+
+  /// Остановить запись и вернуть файл.
+  static Future<XFile?> stopVoiceRecording() async {
+    final path = await _recorder.stop();
+    if (path == null) return null;
+    final file = File(path);
+    if (!await file.exists()) return null;
+    return XFile(path);
   }
 }

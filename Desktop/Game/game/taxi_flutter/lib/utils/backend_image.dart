@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../services/api_service.dart';
+import '../services/media_cache.dart';
 
 /// Загружает изображение через http.get() и показывает через Image.memory().
 /// Обходит CachedNetworkImage/flutter_cache_manager которые зависают
@@ -49,15 +50,39 @@ class _BackendImageState extends State<BackendImage> {
     if (BackendImage._cache.containsKey(url)) {
       return BackendImage._cache[url]!;
     }
-    final response = await http
-        .get(Uri.parse(url))
-        .timeout(const Duration(seconds: 30));
-    if (response.statusCode != 200) {
-      throw Exception('HTTP ${response.statusCode}');
+
+    // Сначала пробуем взять из дискового кэша.
+    final fileInfo = await MediaCache.instance.getFileFromCache(url);
+    Uint8List bytes;
+    if (fileInfo != null) {
+      bytes = await fileInfo.file.readAsBytes();
+    } else {
+      // Фолбэк через прямой http для нестандартных ответов сервера.
+      final response = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 30));
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}');
+      }
+      bytes = response.bodyBytes;
+
+      // Пишем в дисковый кэш вручную, чтобы повторно открывалось офлайн.
+      await MediaCache.instance.putFile(
+        url,
+        bytes,
+        fileExtension: _extFromUrl(url),
+      );
     }
-    final bytes = response.bodyBytes;
+
     BackendImage._cache[url] = bytes;
     return bytes;
+  }
+
+  String _extFromUrl(String url) {
+    final clean = url.split('?').first;
+    final dot = clean.lastIndexOf('.');
+    if (dot == -1 || dot == clean.length - 1) return 'jpg';
+    return clean.substring(dot + 1).toLowerCase();
   }
 
   @override

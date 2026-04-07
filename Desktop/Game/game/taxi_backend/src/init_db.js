@@ -57,6 +57,9 @@ async function initDatabase() {
         receiver_id INTEGER REFERENCES users(id),
         text TEXT NOT NULL,
         media_url TEXT,
+        edited_at TIMESTAMP,
+        is_deleted BOOLEAN DEFAULT false,
+        forwarded_from_id INTEGER REFERENCES messages(id),
         is_read BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT NOW()
       );
@@ -99,6 +102,9 @@ async function initDatabase() {
     await pool.query(`
       ALTER TABLE markers ADD COLUMN IF NOT EXISTS media_urls JSONB DEFAULT '[]';
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url TEXT;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMP;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS forwarded_from_id INTEGER REFERENCES messages(id);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS rating INTEGER DEFAULT 0;
     `);

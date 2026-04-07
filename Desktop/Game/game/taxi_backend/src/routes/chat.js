@@ -18,7 +18,7 @@ router.get('/global', async (req, res) => {
     const offset = parseInt(req.query.offset) || 0;
 
     const result = await pool.query(
-      `SELECT m.id, m.text, m.media_url, m.created_at, m.is_read,
+      `SELECT m.id, m.text, m.media_url, m.created_at, m.is_read, m.edited_at, m.is_deleted, m.forwarded_from_id,
               u.id AS sender_id, u.name AS sender_name, u.role AS sender_role
        FROM messages m
        LEFT JOIN users u ON m.sender_id = u.id
@@ -101,7 +101,7 @@ router.get('/direct/:userId', async (req, res) => {
     const offset = parseInt(req.query.offset) || 0;
 
     const result = await pool.query(
-      `SELECT m.id, m.text, m.media_url, m.created_at, m.is_read,
+      `SELECT m.id, m.text, m.media_url, m.created_at, m.is_read, m.edited_at, m.is_deleted, m.forwarded_from_id,
               u.id AS sender_id, u.name AS sender_name, u.role AS sender_role,
               r.id AS receiver_id, r.name AS receiver_name
        FROM messages m
@@ -299,6 +299,180 @@ router.get('/conversations', async (req, res) => {
     return res.json({ conversations: result.rows });
   } catch (error) {
     console.error('Ошибка получения переписок:', error);
+    return res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+/**
+ * PUT /chat/messages/:id
+ * Редактировать своё сообщение.
+ * Body: { text: string }
+ */
+router.put('/messages/:id', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const messageId = parseInt(req.params.id);
+    const text = String(req.body?.text || '').trim();
+
+    if (!text) {
+      return res.status(400).json({ error: 'Текст сообщения обязателен' });
+    }
+
+    const current = await pool.query(
+      `SELECT id, sender_id, receiver_id FROM messages WHERE id = $1`,
+      [messageId]
+    );
+    if (current.rows.length === 0) {
+      return res.status(404).json({ error: 'Сообщение не найдено' });
+    }
+    const row = current.rows[0];
+    if (row.sender_id !== userId) {
+      return res.status(403).json({ error: 'Можно редактировать только свои сообщения' });
+    }
+
+    const updated = await pool.query(
+      `UPDATE messages
+       SET text = $1, edited_at = NOW()
+       WHERE id = $2
+       RETURNING id, sender_id, receiver_id, text, media_url, is_read, created_at, edited_at, is_deleted, forwarded_from_id`,
+      [text, messageId]
+    );
+    const message = updated.rows[0];
+
+    const io = req.app.locals.io;
+    const userSockets = req.app.locals.userSockets;
+    if (message.receiver_id == null) {
+      io.emit('chat:updated', message);
+    } else {
+      const senderSocketId = userSockets.get(String(message.sender_id));
+      const receiverSocketId = userSockets.get(String(message.receiver_id));
+      if (senderSocketId) io.to(senderSocketId).emit('chat:updated', message);
+      if (receiverSocketId) io.to(receiverSocketId).emit('chat:updated', message);
+    }
+
+    return res.json({ message });
+  } catch (error) {
+    console.error('Ошибка редактирования сообщения:', error);
+    return res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+/**
+ * DELETE /chat/messages/:id
+ * Удалить (мягко) своё сообщение.
+ */
+router.delete('/messages/:id', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const messageId = parseInt(req.params.id);
+
+    const current = await pool.query(
+      `SELECT id, sender_id, receiver_id FROM messages WHERE id = $1`,
+      [messageId]
+    );
+    if (current.rows.length === 0) {
+      return res.status(404).json({ error: 'Сообщение не найдено' });
+    }
+    const row = current.rows[0];
+    if (row.sender_id !== userId) {
+      return res.status(403).json({ error: 'Можно удалять только свои сообщения' });
+    }
+
+    const updated = await pool.query(
+      `UPDATE messages
+       SET text = 'Сообщение удалено', media_url = NULL, is_deleted = true, edited_at = NOW()
+       WHERE id = $1
+       RETURNING id, sender_id, receiver_id, text, media_url, is_read, created_at, edited_at, is_deleted, forwarded_from_id`,
+      [messageId]
+    );
+    const message = updated.rows[0];
+
+    const io = req.app.locals.io;
+    const userSockets = req.app.locals.userSockets;
+    if (message.receiver_id == null) {
+      io.emit('chat:deleted', message);
+    } else {
+      const senderSocketId = userSockets.get(String(message.sender_id));
+      const receiverSocketId = userSockets.get(String(message.receiver_id));
+      if (senderSocketId) io.to(senderSocketId).emit('chat:deleted', message);
+      if (receiverSocketId) io.to(receiverSocketId).emit('chat:deleted', message);
+    }
+
+    return res.json({ message });
+  } catch (error) {
+    console.error('Ошибка удаления сообщения:', error);
+    return res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+/**
+ * POST /chat/messages/:id/forward
+ * Переслать сообщение в общий или личный чат.
+ * Body: { receiver_id?: number|null }
+ */
+router.post('/messages/:id/forward', async (req, res) => {
+  try {
+    const senderId = req.user.id;
+    const sourceId = parseInt(req.params.id);
+    const receiverId = req.body?.receiver_id == null ? null : parseInt(req.body.receiver_id);
+
+    const srcRes = await pool.query(
+      `SELECT id, text, media_url FROM messages WHERE id = $1`,
+      [sourceId]
+    );
+    if (srcRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Исходное сообщение не найдено' });
+    }
+    const src = srcRes.rows[0];
+    const text = (src.text || '').trim();
+    const mediaUrl = src.media_url || null;
+    if (!text && !mediaUrl) {
+      return res.status(400).json({ error: 'Нечего пересылать' });
+    }
+
+    if (receiverId !== null) {
+      const receiver = await pool.query(
+        'SELECT id FROM users WHERE id = $1 AND is_active = true',
+        [receiverId]
+      );
+      if (receiver.rows.length === 0) {
+        return res.status(404).json({ error: 'Получатель не найден' });
+      }
+    }
+
+    const inserted = await pool.query(
+      `INSERT INTO messages (sender_id, receiver_id, text, media_url, forwarded_from_id)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, sender_id, receiver_id, text, media_url, is_read, created_at, edited_at, is_deleted, forwarded_from_id`,
+      [senderId, receiverId, text, mediaUrl, sourceId]
+    );
+    const message = inserted.rows[0];
+
+    const senderResult = await pool.query(
+      'SELECT name, role FROM users WHERE id = $1',
+      [senderId]
+    );
+    const sender = senderResult.rows[0];
+    const fullMessage = {
+      ...message,
+      sender_name: sender?.name,
+      sender_role: sender?.role,
+    };
+
+    const io = req.app.locals.io;
+    const userSockets = req.app.locals.userSockets;
+    if (receiverId == null) {
+      io.emit('chat:global', fullMessage);
+    } else {
+      const receiverSocketId = userSockets.get(String(receiverId));
+      const senderSocketId = userSockets.get(String(senderId));
+      if (receiverSocketId) io.to(receiverSocketId).emit('chat:direct', fullMessage);
+      if (senderSocketId) io.to(senderSocketId).emit('chat:direct', fullMessage);
+    }
+
+    return res.status(201).json({ message: fullMessage });
+  } catch (error) {
+    console.error('Ошибка пересылки сообщения:', error);
     return res.status(500).json({ error: 'Внутренняя ошибка сервера' });
   }
 });

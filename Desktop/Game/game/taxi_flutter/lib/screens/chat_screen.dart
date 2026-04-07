@@ -127,6 +127,15 @@ class _GlobalChatTabState extends State<_GlobalChatTab>
         _scrollToBottom();
       }
     };
+    SocketService().onChatUpdated = _upsertMessage;
+    SocketService().onChatDeleted = _upsertMessage;
+  }
+
+  void _upsertMessage(ChatMessage message) {
+    if (!mounted) return;
+    final idx = _messages.indexWhere((m) => m.id == message.id);
+    if (idx == -1) return;
+    setState(() => _messages[idx] = message);
   }
 
   Future<void> _sendMessage({String? mediaUrl}) async {
@@ -199,6 +208,7 @@ class _GlobalChatTabState extends State<_GlobalChatTab>
                           message: msg,
                           isMe: isMe,
                           showSender: true,
+                          onAction: (a) => _handleMessageAction(msg, a),
                           onNameTap: isMe
                               ? null
                               : () => Navigator.push(
@@ -226,6 +236,68 @@ class _GlobalChatTabState extends State<_GlobalChatTab>
           onSendMessage: (mediaUrl) => _sendMessage(mediaUrl: mediaUrl),
         ),
       ],
+    );
+  }
+
+  Future<void> _handleMessageAction(ChatMessage msg, _MessageAction action) async {
+    switch (action) {
+      case _MessageAction.edit:
+        final ctrl = TextEditingController(text: msg.text);
+        final newText = await showDialog<String>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Редактировать'),
+            content: TextField(controller: ctrl, maxLines: 4, autofocus: true),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(_, null), child: const Text('Отмена')),
+              ElevatedButton(onPressed: () => Navigator.pop(_, ctrl.text.trim()), child: const Text('Сохранить')),
+            ],
+          ),
+        );
+        if (newText == null || newText.isEmpty) return;
+        await ApiService().editMessage(msg.id, newText);
+        break;
+      case _MessageAction.delete:
+        await ApiService().deleteMessage(msg.id);
+        break;
+      case _MessageAction.forward:
+        final target = await _pickForwardTarget();
+        if (target == null) return;
+        await ApiService().forwardMessage(msg.id, receiverId: target);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Сообщение переслано'), backgroundColor: Colors.green),
+          );
+        }
+        break;
+    }
+  }
+
+  Future<int?> _pickForwardTarget() async {
+    final convs = await ApiService().getChatConversations();
+    if (!mounted) return null;
+    return showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      builder: (_) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.forum, color: Colors.white70),
+              title: const Text('Переслать в общий чат', style: TextStyle(color: Colors.white)),
+              onTap: () => Navigator.pop(_, null),
+            ),
+            const Divider(color: Colors.white12),
+            ...convs.map((c) => ListTile(
+                  leading: const Icon(Icons.person, color: Colors.white54),
+                  title: Text(c.userName, style: const TextStyle(color: Colors.white)),
+                  subtitle: Text(c.userRole, style: const TextStyle(color: Colors.white38)),
+                  onTap: () => Navigator.pop(_, c.userId),
+                )),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -478,6 +550,15 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
         _scrollToBottom();
       }
     };
+    SocketService().onChatUpdated = _applyMessagePatch;
+    SocketService().onChatDeleted = _applyMessagePatch;
+  }
+
+  void _applyMessagePatch(ChatMessage message) {
+    final idx = _messages.indexWhere((m) => m.id == message.id);
+    if (idx == -1) return;
+    if (!mounted) return;
+    setState(() => _messages[idx] = message);
   }
 
   Future<void> _sendMessage({String? mediaUrl}) async {
@@ -564,6 +645,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
                             message: msg,
                             isMe: isMe,
                             showSender: false,
+                            onAction: (a) => _handleMessageAction(msg, a),
                           );
                         },
                       ),
@@ -577,23 +659,89 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
       ),
     );
   }
+
+  Future<void> _handleMessageAction(ChatMessage msg, _MessageAction action) async {
+    switch (action) {
+      case _MessageAction.edit:
+        final ctrl = TextEditingController(text: msg.text);
+        final newText = await showDialog<String>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Редактировать'),
+            content: TextField(controller: ctrl, maxLines: 4, autofocus: true),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(_, null), child: const Text('Отмена')),
+              ElevatedButton(onPressed: () => Navigator.pop(_, ctrl.text.trim()), child: const Text('Сохранить')),
+            ],
+          ),
+        );
+        if (newText == null || newText.isEmpty) return;
+        await ApiService().editMessage(msg.id, newText);
+        break;
+      case _MessageAction.delete:
+        await ApiService().deleteMessage(msg.id);
+        break;
+      case _MessageAction.forward:
+        final target = await _pickForwardTarget();
+        if (!mounted) return;
+        await ApiService().forwardMessage(msg.id, receiverId: target);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Сообщение переслано'), backgroundColor: Colors.green),
+          );
+        }
+        break;
+    }
+  }
+
+  Future<int?> _pickForwardTarget() async {
+    final convs = await ApiService().getChatConversations();
+    if (!mounted) return null;
+    return showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      builder: (_) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.forum, color: Colors.white70),
+              title: const Text('Переслать в общий чат', style: TextStyle(color: Colors.white)),
+              onTap: () => Navigator.pop(_, null),
+            ),
+            const Divider(color: Colors.white12),
+            ...convs.map((c) => ListTile(
+                  leading: const Icon(Icons.person, color: Colors.white54),
+                  title: Text(c.userName, style: const TextStyle(color: Colors.white)),
+                  subtitle: Text(c.userRole, style: const TextStyle(color: Colors.white38)),
+                  onTap: () => Navigator.pop(_, c.userId),
+                )),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ============================================================
 // ВИДЖЕТ: ПУЗЫРЬ СООБЩЕНИЯ
 // ============================================================
 
+enum _MessageAction { edit, forward, delete }
+
 class _MessageBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isMe;
   final bool showSender;
   final VoidCallback? onNameTap;
+  final Function(_MessageAction action)? onAction;
 
   const _MessageBubble({
     required this.message,
     required this.isMe,
     required this.showSender,
     this.onNameTap,
+    this.onAction,
   });
 
   @override
@@ -633,6 +781,8 @@ class _MessageBubble extends StatelessWidget {
             ),
             const SizedBox(height: 4),
           ],
+          if (message.forwardedFromId != null)
+            const Text('Переслано', style: TextStyle(color: Colors.white38, fontSize: 11)),
           if (message.text.isNotEmpty)
             Text(message.text, style: const TextStyle(color: Colors.white, fontSize: 15)),
           if (message.mediaUrl != null) ...[
@@ -648,6 +798,18 @@ class _MessageBubble extends StatelessWidget {
                           child: Icon(Icons.play_circle_fill, color: Colors.white, size: 48),
                         ),
                       )
+                    : MediaService.isAudio(message.mediaUrl!)
+                        ? Container(
+                            width: 200, height: 56, color: Colors.black45,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.play_circle_fill, color: Colors.white70),
+                                SizedBox(width: 8),
+                                Text('Голосовое сообщение', style: TextStyle(color: Colors.white70)),
+                              ],
+                            ),
+                          )
                     : BackendImage(
                         url: message.mediaUrl!,
                         width: 200,
@@ -662,9 +824,13 @@ class _MessageBubble extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 4),
-          Align(
-            alignment: Alignment.bottomRight,
-            child: Text(timeStr, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              if (message.editedAt != null)
+                const Text('изменено ', style: TextStyle(color: Colors.white38, fontSize: 10)),
+              Text(timeStr, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+            ],
           ),
         ],
       ),
@@ -697,8 +863,51 @@ class _MessageBubble extends StatelessWidget {
             ),
             const SizedBox(width: 8),
           ],
-          bubble,
+          GestureDetector(
+            onLongPress: onAction == null ? null : () => _showActions(context),
+            child: bubble,
+          ),
         ],
+      ),
+    );
+  }
+
+  void _showActions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isMe && !message.isDeleted)
+              ListTile(
+                leading: const Icon(Icons.edit, color: Colors.white70),
+                title: const Text('Редактировать', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  onAction?.call(_MessageAction.edit);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.forward, color: Colors.white70),
+              title: const Text('Переслать', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                onAction?.call(_MessageAction.forward);
+              },
+            ),
+            if (isMe && !message.isDeleted)
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.redAccent),
+                title: const Text('Удалить', style: TextStyle(color: Colors.redAccent)),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  onAction?.call(_MessageAction.delete);
+                },
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -734,6 +943,7 @@ class _ChatInput extends StatefulWidget {
 class _ChatInputState extends State<_ChatInput> {
   XFile? _pickedFile;
   bool _isUploading = false;
+  bool _isRecording = false;
 
   Future<void> _pickMedia(ImageSource source) async {
     final files = await MediaService.pickMedia(source);
@@ -773,6 +983,29 @@ class _ChatInputState extends State<_ChatInput> {
     widget.onSendMessage(mediaUrl);
   }
 
+  Future<void> _toggleRecording() async {
+    if (_isRecording) {
+      final voice = await MediaService.stopVoiceRecording();
+      if (!mounted) return;
+      setState(() => _isRecording = false);
+      if (voice != null) {
+        setState(() => _pickedFile = voice);
+      }
+      return;
+    }
+
+    final allowed = await MediaService.canRecordAudio();
+    if (!allowed) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Нет доступа к микрофону'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    await MediaService.startVoiceRecording();
+    if (mounted) setState(() => _isRecording = true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final busy = widget.isSending || _isUploading;
@@ -793,6 +1026,11 @@ class _ChatInputState extends State<_ChatInput> {
                           width: 60, height: 60, color: Colors.black38,
                           child: const Center(child: Icon(Icons.videocam, color: Colors.white)),
                         )
+                      : MediaService.isAudio(_pickedFile!.path)
+                          ? Container(
+                              width: 60, height: 60, color: Colors.black38,
+                              child: const Center(child: Icon(Icons.mic, color: Colors.white)),
+                            )
                       : Image.file(File(_pickedFile!.path), width: 60, height: 60, fit: BoxFit.cover),
                 ),
                 const SizedBox(width: 8),
@@ -831,6 +1069,14 @@ class _ChatInputState extends State<_ChatInput> {
                 icon: const Icon(Icons.videocam, color: Colors.white38),
                 iconSize: 24,
                 onPressed: busy ? null : _pickVideo,
+              ),
+              IconButton(
+                icon: Icon(
+                  _isRecording ? Icons.stop_circle : Icons.mic,
+                  color: _isRecording ? Colors.redAccent : Colors.white38,
+                ),
+                iconSize: 24,
+                onPressed: busy ? null : _toggleRecording,
               ),
               // Поле ввода текста
               Expanded(

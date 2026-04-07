@@ -292,6 +292,9 @@ class ChatMessage {
   final String? receiverName;
   final String text;
   final String? mediaUrl;
+  final DateTime? editedAt;
+  final bool isDeleted;
+  final int? forwardedFromId;
   final bool isRead;
   final DateTime createdAt;
 
@@ -304,6 +307,9 @@ class ChatMessage {
     this.receiverName,
     required this.text,
     this.mediaUrl,
+    this.editedAt,
+    this.isDeleted = false,
+    this.forwardedFromId,
     required this.isRead,
     required this.createdAt,
   });
@@ -318,6 +324,9 @@ class ChatMessage {
       receiverName: json['receiver_name'] as String?,
       text: json['text'] as String? ?? '',
       mediaUrl: json['media_url'] as String?,
+      editedAt: json['edited_at'] != null ? DateTime.parse(json['edited_at'] as String) : null,
+      isDeleted: json['is_deleted'] as bool? ?? false,
+      forwardedFromId: json['forwarded_from_id'] as int?,
       isRead: json['is_read'] as bool? ?? false,
       createdAt: DateTime.parse(json['created_at'] as String),
     );

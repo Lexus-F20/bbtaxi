@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'dart:io';
+import 'package:audioplayers/audioplayers.dart';
 
 import '../services/api_service.dart';
 import '../services/media_service.dart';
+import '../services/media_cache.dart';
 import 'backend_image.dart';
 
 /// Открыть фото или видео на весь экран.
@@ -14,6 +17,8 @@ void openMediaViewer(BuildContext context, String url) {
     MaterialPageRoute(
       builder: (_) => MediaService.isVideo(safeUrl)
           ? _VideoPlayerScreen(videoUrl: safeUrl)
+          : MediaService.isAudio(safeUrl)
+              ? _AudioPlayerScreen(audioUrl: safeUrl)
           : _FullScreenImageScreen(imageUrl: safeUrl),
     ),
   );
@@ -78,6 +83,7 @@ class _VideoPlayerScreenState extends State<_VideoPlayerScreen> {
   VideoPlayerController? _controller;
   bool _isLoading = true;
   String? _error;
+  File? _cachedVideoFile;
 
   @override
   void initState() {
@@ -87,7 +93,8 @@ class _VideoPlayerScreenState extends State<_VideoPlayerScreen> {
 
   Future<void> _initPlayer() async {
     try {
-      _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
+      _cachedVideoFile = await MediaCache.instance.getSingleFile(widget.videoUrl);
+      _controller = VideoPlayerController.file(_cachedVideoFile!);
       await _controller!.initialize();
       _controller!.addListener(() {
         if (mounted) setState(() {});
@@ -200,5 +207,100 @@ class _VideoPlayerScreenState extends State<_VideoPlayerScreen> {
                   ),
                 ),
     );
+  }
+}
+
+class _AudioPlayerScreen extends StatefulWidget {
+  final String audioUrl;
+  const _AudioPlayerScreen({required this.audioUrl});
+
+  @override
+  State<_AudioPlayerScreen> createState() => _AudioPlayerScreenState();
+}
+
+class _AudioPlayerScreenState extends State<_AudioPlayerScreen> {
+  final AudioPlayer _player = AudioPlayer();
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+  bool _loading = true;
+  bool _playing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initAudio();
+  }
+
+  Future<void> _initAudio() async {
+    final file = await MediaCache.instance.getSingleFile(widget.audioUrl);
+    await _player.setSourceDeviceFile(file.path);
+    _player.onDurationChanged.listen((d) => setState(() => _duration = d));
+    _player.onPositionChanged.listen((p) => setState(() => _position = p));
+    _player.onPlayerComplete.listen((_) => setState(() => _playing = false));
+    if (mounted) setState(() => _loading = false);
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final maxMs = _duration.inMilliseconds <= 0 ? 1 : _duration.inMilliseconds;
+    final value = _position.inMilliseconds.clamp(0, maxMs).toDouble();
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white),
+      body: Center(
+        child: _loading
+            ? const CircularProgressIndicator(color: Colors.white)
+            : Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.mic, color: Colors.white70, size: 72),
+                    const SizedBox(height: 16),
+                    Slider(
+                      value: value,
+                      max: maxMs.toDouble(),
+                      onChanged: (v) => _player.seek(Duration(milliseconds: v.toInt())),
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(_fmt(_position), style: const TextStyle(color: Colors.white54)),
+                        Text(_fmt(_duration), style: const TextStyle(color: Colors.white54)),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    IconButton(
+                      iconSize: 56,
+                      color: Colors.white,
+                      icon: Icon(_playing ? Icons.pause_circle : Icons.play_circle),
+                      onPressed: () async {
+                        if (_playing) {
+                          await _player.pause();
+                          setState(() => _playing = false);
+                        } else {
+                          await _player.resume();
+                          setState(() => _playing = true);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+      ),
+    );
+  }
+
+  String _fmt(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 }
