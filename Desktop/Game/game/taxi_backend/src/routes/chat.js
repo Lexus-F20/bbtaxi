@@ -1,6 +1,7 @@
 // Роуты чата: общий чат и личные сообщения
 const express = require('express');
 const pool = require('../config/database');
+const { sendPushToUser, saveNotification } = require('../services/fcm');
 
 const router = express.Router();
 
@@ -180,7 +181,7 @@ router.post('/direct/:userId', async (req, res) => {
       receiver_name: receiver.name,
     };
 
-    // Отправляем получателю через Socket.io
+    // Отправляем через Socket.io
     const io = req.app.locals.io;
     const userSockets = req.app.locals.userSockets;
 
@@ -194,6 +195,17 @@ router.post('/direct/:userId', async (req, res) => {
     if (senderSocketId) {
       io.to(senderSocketId).emit('chat:direct', fullMessage);
     }
+
+    // Push-уведомление получателю (если оффлайн — покажет системное уведомление)
+    const pushText = (message.text || '').trim() || '📎 Медиафайл';
+    const truncated = pushText.length > 100 ? pushText.substring(0, 97) + '...' : pushText;
+    await saveNotification(receiverId, sender?.name || 'Сообщение', truncated);
+    await sendPushToUser(
+      receiverId,
+      `💬 ${sender?.name || 'Пользователь'}`,
+      truncated,
+      { type: 'chat_direct', senderId: String(senderId), senderName: sender?.name || '' }
+    );
 
     return res.status(201).json({ message: fullMessage });
   } catch (error) {

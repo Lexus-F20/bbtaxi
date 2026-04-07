@@ -132,9 +132,32 @@ const saveNotificationForAll = async (title, body, excludeUserId = null) => {
   }
 };
 
+/**
+ * Отправляет push-уведомление конкретному пользователю по его userId.
+ * Сам достаёт FCM токен из БД.
+ *
+ * @param {number} userId - ID пользователя
+ * @param {string} title - Заголовок уведомления
+ * @param {string} body - Текст уведомления
+ * @param {object} data - Дополнительные данные (опционально)
+ */
+const sendPushToUser = async (userId, title, body, data = {}) => {
+  try {
+    const result = await pool.query(
+      'SELECT fcm_token FROM users WHERE id = $1 AND fcm_token IS NOT NULL',
+      [userId]
+    );
+    if (result.rows.length === 0) return;
+    await sendPushNotification(result.rows[0].fcm_token, title, body, data);
+  } catch (error) {
+    console.error('Ошибка sendPushToUser:', error.message);
+  }
+};
+
 module.exports = {
   sendPushNotification,
   sendPushToAll,
+  sendPushToUser,
   saveNotification,
   saveNotificationForAll,
 };
