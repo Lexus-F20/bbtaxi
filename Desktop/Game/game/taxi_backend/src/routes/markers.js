@@ -98,7 +98,7 @@ router.post('/', async (req, res) => {
  */
 router.get('/', async (req, res) => {
   try {
-    const { status, all } = req.query;
+    const { status } = req.query;
     const userRole = req.user.role;
 
     let query = `

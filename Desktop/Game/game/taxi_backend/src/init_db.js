@@ -6,7 +6,7 @@ async function initDatabase() {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
-        phone VARCHAR(20) UNIQUE NOT NULL,
+        login VARCHAR(100) UNIQUE NOT NULL,
         name VARCHAR(100) NOT NULL,
         password_hash TEXT NOT NULL,
         role VARCHAR(20) DEFAULT 'driver',
@@ -114,13 +114,7 @@ async function initDatabase() {
     if (parseInt(count.rows[0].count) === 0) {
       // Пароль: admin123
       await pool.query(`
-        INSERT INTO users (phone, name, password_hash, role)
-        VALUES ('+70000000000', 'Администратор', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'admin')
-        ON CONFLICT DO NOTHING
-      `);
-      // Пароль: admin
-      await pool.query(`
-        INSERT INTO users (phone, name, password_hash, role)
+        INSERT INTO users (login, name, password_hash, role)
         VALUES ('admin', 'Администратор', '$2a$10$s5dIVrEu41L//163RXsIvO6eICQpV0zfHhR5rmcSNU4OVz6JHoCVm', 'admin')
         ON CONFLICT DO NOTHING
       `);

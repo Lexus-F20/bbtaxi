@@ -126,7 +126,7 @@ const saveNotificationForAll = async (title, body, excludeUserId = null) => {
       )
     );
 
-    await Promise.all(inserts);
+    await Promise.allSettled(inserts);
   } catch (error) {
     console.error('Ошибка массового сохранения уведомлений:', error);
   }

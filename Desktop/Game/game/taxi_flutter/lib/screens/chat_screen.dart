@@ -1,15 +1,18 @@
 // Экран чата: общий чат и личные сообщения
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 import '../models/marker_model.dart';
 import '../providers/auth_provider.dart';
 import '../utils/media_viewer.dart';
 import '../utils/backend_image.dart';
 import '../services/api_service.dart';
+import '../services/media_cache.dart';
 import '../services/media_service.dart';
 import '../services/socket_service.dart';
 import '../models/user_model.dart';
@@ -787,41 +790,32 @@ class _MessageBubble extends StatelessWidget {
             Text(message.text, style: const TextStyle(color: Colors.white, fontSize: 15)),
           if (message.mediaUrl != null) ...[
             if (message.text.isNotEmpty) const SizedBox(height: 6),
-            GestureDetector(
-              onTap: () => openMediaViewer(context, message.mediaUrl!),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: MediaService.isVideo(message.mediaUrl!)
-                    ? Container(
-                        width: 200, height: 120, color: Colors.black45,
-                        child: const Center(
-                          child: Icon(Icons.play_circle_fill, color: Colors.white, size: 48),
+            if (MediaService.isAudio(message.mediaUrl!))
+              _InlineAudioPlayer(url: message.mediaUrl!)
+            else
+              GestureDetector(
+                onTap: () => openMediaViewer(context, message.mediaUrl!),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: MediaService.isVideo(message.mediaUrl!)
+                      ? Container(
+                          width: 200, height: 120, color: Colors.black45,
+                          child: const Center(
+                            child: Icon(Icons.play_circle_fill, color: Colors.white, size: 48),
+                          ),
+                        )
+                      : BackendImage(
+                          url: message.mediaUrl!,
+                          width: 200,
+                          fit: BoxFit.cover,
+                          placeholder: const SizedBox(
+                            width: 200, height: 120,
+                            child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54)),
+                          ),
+                          errorWidget: const Icon(Icons.broken_image, color: Colors.white38),
                         ),
-                      )
-                    : MediaService.isAudio(message.mediaUrl!)
-                        ? Container(
-                            width: 200, height: 56, color: Colors.black45,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: const Row(
-                              children: [
-                                Icon(Icons.play_circle_fill, color: Colors.white70),
-                                SizedBox(width: 8),
-                                Text('Голосовое сообщение', style: TextStyle(color: Colors.white70)),
-                              ],
-                            ),
-                          )
-                    : BackendImage(
-                        url: message.mediaUrl!,
-                        width: 200,
-                        fit: BoxFit.cover,
-                        placeholder: const SizedBox(
-                          width: 200, height: 120,
-                          child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54)),
-                        ),
-                        errorWidget: const Icon(Icons.broken_image, color: Colors.white38),
-                      ),
+                ),
               ),
-            ),
           ],
           const SizedBox(height: 4),
           Row(
@@ -940,23 +934,145 @@ class _ChatInput extends StatefulWidget {
   State<_ChatInput> createState() => _ChatInputState();
 }
 
-class _ChatInputState extends State<_ChatInput> {
+class _ChatInputState extends State<_ChatInput>
+    with SingleTickerProviderStateMixin {
   XFile? _pickedFile;
   bool _isUploading = false;
   bool _isRecording = false;
+  DateTime? _recordingStart;
+  Timer? _recordingTimer;
+  Duration _recordingDuration = Duration.zero;
+  Future? _startFuture;
+  late AnimationController _pulseCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    )..repeat(reverse: true);
+    widget.controller.addListener(_onTextChanged);
+  }
+
+  @override
+  void dispose() {
+    _recordingTimer?.cancel();
+    _pulseCtrl.dispose();
+    widget.controller.removeListener(_onTextChanged);
+    super.dispose();
+  }
+
+  void _onTextChanged() => setState(() {});
 
   Future<void> _pickMedia(ImageSource source) async {
     final files = await MediaService.pickMedia(source);
-    if (files.isNotEmpty) {
-      setState(() => _pickedFile = files.first);
-    }
+    if (files.isNotEmpty && mounted) setState(() => _pickedFile = files.first);
   }
 
   Future<void> _pickVideo() async {
     final files = await MediaService.pickVideoFromCamera();
-    if (files.isNotEmpty) {
-      setState(() => _pickedFile = files.first);
+    if (files.isNotEmpty && mounted) setState(() => _pickedFile = files.first);
+  }
+
+  void _showAttachMenu() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: Colors.lightBlueAccent),
+              title: const Text('Галерея (фото / видео)', style: TextStyle(color: Colors.white)),
+              onTap: () { Navigator.pop(context); _pickMedia(ImageSource.gallery); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_camera, color: Colors.lightGreenAccent),
+              title: const Text('Камера — фото', style: TextStyle(color: Colors.white)),
+              onTap: () { Navigator.pop(context); _pickMedia(ImageSource.camera); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.videocam, color: Colors.orangeAccent),
+              title: const Text('Камера — видео', style: TextStyle(color: Colors.white)),
+              onTap: () { Navigator.pop(context); _pickVideo(); },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _startRecording() async {
+    if (widget.isSending || _isUploading || _isRecording) return;
+    final allowed = await MediaService.canRecordAudio();
+    if (!mounted) return;
+    if (!allowed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Нет доступа к микрофону'), backgroundColor: Colors.red),
+      );
+      return;
     }
+    _startFuture = MediaService.startVoiceRecording();
+    await _startFuture;
+    _startFuture = null;
+    if (!mounted) return;
+    setState(() {
+      _isRecording = true;
+      _recordingStart = DateTime.now();
+      _recordingDuration = Duration.zero;
+    });
+    _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && _isRecording && _recordingStart != null) {
+        setState(() => _recordingDuration = DateTime.now().difference(_recordingStart!));
+      }
+    });
+  }
+
+  Future<void> _stopAndSend() async {
+    await _startFuture;
+    if (!_isRecording || !mounted) return;
+    _recordingTimer?.cancel();
+    final voice = await MediaService.stopVoiceRecording();
+    if (!mounted) return;
+    final dur = _recordingDuration;
+    setState(() { _isRecording = false; _recordingDuration = Duration.zero; });
+
+    if (voice == null) return;
+    if (dur.inMilliseconds < 500) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Слишком короткая запись'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    setState(() => _isUploading = true);
+    try {
+      final url = await MediaService.uploadFile(voice, 'chat');
+      if (!mounted) return;
+      setState(() => _isUploading = false);
+      widget.onSendMessage(url);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isUploading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка отправки голосового: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _cancelRecording() async {
+    if (!_isRecording) return;
+    _recordingTimer?.cancel();
+    await MediaService.stopVoiceRecording();
+    if (!mounted) return;
+    setState(() { _isRecording = false; _recordingDuration = Duration.zero; });
   }
 
   Future<void> _send() async {
@@ -969,46 +1085,30 @@ class _ChatInputState extends State<_ChatInput> {
       try {
         mediaUrl = await MediaService.uploadFile(_pickedFile!, 'chat');
       } catch (e) {
-        setState(() { _isUploading = false; });
         if (mounted) {
+          setState(() => _isUploading = false);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Ошибка загрузки файла: $e'), backgroundColor: Colors.red),
           );
         }
         return;
       }
-      setState(() { _isUploading = false; _pickedFile = null; });
+      if (mounted) setState(() { _isUploading = false; _pickedFile = null; });
     }
-
     widget.onSendMessage(mediaUrl);
   }
 
-  Future<void> _toggleRecording() async {
-    if (_isRecording) {
-      final voice = await MediaService.stopVoiceRecording();
-      if (!mounted) return;
-      setState(() => _isRecording = false);
-      if (voice != null) {
-        setState(() => _pickedFile = voice);
-      }
-      return;
-    }
-
-    final allowed = await MediaService.canRecordAudio();
-    if (!allowed) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Нет доступа к микрофону'), backgroundColor: Colors.red),
-      );
-      return;
-    }
-    await MediaService.startVoiceRecording();
-    if (mounted) setState(() => _isRecording = true);
+  String _fmtDur(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 
   @override
   Widget build(BuildContext context) {
     final busy = widget.isSending || _isUploading;
+    final hasContent = widget.controller.text.trim().isNotEmpty || _pickedFile != null;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1031,10 +1131,12 @@ class _ChatInputState extends State<_ChatInput> {
                               width: 60, height: 60, color: Colors.black38,
                               child: const Center(child: Icon(Icons.mic, color: Colors.white)),
                             )
-                      : Image.file(File(_pickedFile!.path), width: 60, height: 60, fit: BoxFit.cover),
+                          : Image.file(File(_pickedFile!.path), width: 60, height: 60, fit: BoxFit.cover),
                 ),
                 const SizedBox(width: 8),
-                const Expanded(child: Text('Медиафайл выбран', style: TextStyle(color: Colors.white70, fontSize: 13))),
+                const Expanded(
+                  child: Text('Медиафайл выбран', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                ),
                 IconButton(
                   icon: const Icon(Icons.close, color: Colors.white54, size: 20),
                   onPressed: () => setState(() => _pickedFile = null),
@@ -1043,7 +1145,7 @@ class _ChatInputState extends State<_ChatInput> {
             ),
           ),
 
-        // Основная строка ввода
+        // Строка ввода
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           decoration: const BoxDecoration(
@@ -1051,64 +1153,240 @@ class _ChatInputState extends State<_ChatInput> {
             border: Border(top: BorderSide(color: Colors.white12)),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              // Кнопка галереи (фото + видео)
-              IconButton(
-                icon: const Icon(Icons.photo_library, color: Colors.white38),
-                iconSize: 24,
-                onPressed: busy ? null : () => _pickMedia(ImageSource.gallery),
-              ),
-              // Кнопка камеры (фото)
-              IconButton(
-                icon: const Icon(Icons.photo_camera, color: Colors.white38),
-                iconSize: 24,
-                onPressed: busy ? null : () => _pickMedia(ImageSource.camera),
-              ),
-              // Кнопка видео с камеры
-              IconButton(
-                icon: const Icon(Icons.videocam, color: Colors.white38),
-                iconSize: 24,
-                onPressed: busy ? null : _pickVideo,
-              ),
-              IconButton(
-                icon: Icon(
-                  _isRecording ? Icons.stop_circle : Icons.mic,
-                  color: _isRecording ? Colors.redAccent : Colors.white38,
+              // Скрепка — скрыта во время записи
+              if (!_isRecording)
+                IconButton(
+                  icon: const Icon(Icons.attach_file, color: Colors.white38),
+                  iconSize: 24,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  onPressed: busy ? null : _showAttachMenu,
                 ),
-                iconSize: 24,
-                onPressed: busy ? null : _toggleRecording,
-              ),
-              // Поле ввода текста
+
+              // Поле текста или индикатор записи
               Expanded(
-                child: TextField(
-                  controller: widget.controller,
-                  style: const TextStyle(color: Colors.white),
-                  maxLines: 4,
-                  minLines: 1,
-                  textInputAction: TextInputAction.send,
-                  onSubmitted: (_) => _send(),
-                  decoration: const InputDecoration(
-                    hintText: 'Сообщение...',
-                    hintStyle: TextStyle(color: Colors.white38),
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: _isRecording
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                        child: Row(
+                          children: [
+                            FadeTransition(
+                              opacity: _pulseCtrl,
+                              child: const Icon(Icons.circle, color: Colors.redAccent, size: 10),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              _fmtDur(_recordingDuration),
+                              style: const TextStyle(color: Colors.white, fontSize: 15),
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Text(
+                                'Отпустите для отправки',
+                                style: TextStyle(color: Colors.white38, fontSize: 12),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : TextField(
+                        controller: widget.controller,
+                        style: const TextStyle(color: Colors.white),
+                        maxLines: 4,
+                        minLines: 1,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) => _send(),
+                        decoration: const InputDecoration(
+                          hintText: 'Сообщение...',
+                          hintStyle: TextStyle(color: Colors.white38),
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        ),
+                      ),
+              ),
+
+              // Правая кнопка: спиннер / микрофон / отправить
+              if (busy)
+                const SizedBox(
+                  width: 36, height: 36,
+                  child: Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator(strokeWidth: 2)),
+                )
+              else if (_isRecording)
+                Listener(
+                  onPointerUp: (_) => _stopAndSend(),
+                  onPointerCancel: (_) => _cancelRecording(),
+                  child: Container(
+                    width: 40, height: 40,
+                    alignment: Alignment.center,
+                    child: FadeTransition(
+                      opacity: _pulseCtrl,
+                      child: const Icon(Icons.mic, color: Colors.redAccent, size: 26),
+                    ),
+                  ),
+                )
+              else if (hasContent)
+                IconButton(
+                  icon: const Icon(Icons.send, color: Color(0xFF3949AB)),
+                  iconSize: 26,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                  onPressed: _send,
+                )
+              else
+                Listener(
+                  onPointerDown: (_) => _startRecording(),
+                  onPointerUp: (_) => _stopAndSend(),
+                  onPointerCancel: (_) => _cancelRecording(),
+                  child: Container(
+                    width: 40, height: 40,
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.mic, color: Colors.white54, size: 26),
                   ),
                 ),
-              ),
-              const SizedBox(width: 4),
-              // Кнопка отправки
-              busy
-                  ? const SizedBox(width: 36, height: 36,
-                      child: Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator(strokeWidth: 2)))
-                  : IconButton(
-                      icon: const Icon(Icons.send, color: Color(0xFF1A237E)),
-                      iconSize: 26,
-                      onPressed: _send,
-                    ),
             ],
           ),
         ),
       ],
+    );
+  }
+}
+
+// ============================================================
+// ВИДЖЕТ: ВСТРОЕННЫЙ ПЛЕЕР ГОЛОСОВОГО СООБЩЕНИЯ
+// ============================================================
+
+class _InlineAudioPlayer extends StatefulWidget {
+  final String url;
+  const _InlineAudioPlayer({required this.url});
+
+  @override
+  State<_InlineAudioPlayer> createState() => _InlineAudioPlayerState();
+}
+
+class _InlineAudioPlayerState extends State<_InlineAudioPlayer> {
+  final AudioPlayer _player = AudioPlayer();
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+  bool _loading = false;
+  bool _loaded = false;
+  bool _playing = false;
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  Future<void> _togglePlay() async {
+    if (_loading) return;
+    if (!_loaded) {
+      setState(() => _loading = true);
+      try {
+        final url = normalizeMediaUrl(widget.url);
+        final file = await MediaCache.instance.getSingleFile(url);
+        await _player.setSourceDeviceFile(file.path);
+        _player.onDurationChanged.listen((d) {
+          if (mounted) setState(() => _duration = d);
+        });
+        _player.onPositionChanged.listen((p) {
+          if (mounted) setState(() => _position = p);
+        });
+        _player.onPlayerComplete.listen((_) {
+          if (mounted) setState(() { _playing = false; _position = Duration.zero; });
+        });
+        if (mounted) setState(() { _loading = false; _loaded = true; });
+      } catch (e) {
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
+    }
+
+    if (_playing) {
+      await _player.pause();
+      if (mounted) setState(() => _playing = false);
+    } else {
+      await _player.resume();
+      if (mounted) setState(() => _playing = true);
+    }
+  }
+
+  String _fmt(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final maxMs = _duration.inMilliseconds <= 0 ? 1 : _duration.inMilliseconds;
+    final sliderValue = _position.inMilliseconds.clamp(0, maxMs).toDouble();
+
+    return Container(
+      width: 220,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      child: Row(
+        children: [
+          _loading
+              ? const SizedBox(
+                  width: 36, height: 36,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
+                )
+              : GestureDetector(
+                  onTap: _togglePlay,
+                  child: Icon(
+                    _playing ? Icons.pause_circle : Icons.play_circle,
+                    color: Colors.white,
+                    size: 36,
+                  ),
+                ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 2,
+                    thumbRadius: 5,
+                    overlayRadius: 10,
+                    activeTrackColor: Colors.white,
+                    inactiveTrackColor: Colors.white30,
+                    thumbColor: Colors.white,
+                    overlayColor: Colors.white24,
+                  ),
+                  child: Slider(
+                    value: sliderValue,
+                    max: maxMs.toDouble(),
+                    onChanged: _loaded
+                        ? (v) => _player.seek(Duration(milliseconds: v.toInt()))
+                        : null,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        _loaded ? _fmt(_position) : '00:00',
+                        style: const TextStyle(color: Colors.white54, fontSize: 10),
+                      ),
+                      Text(
+                        _loaded ? _fmt(_duration) : '—:——',
+                        style: const TextStyle(color: Colors.white54, fontSize: 10),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

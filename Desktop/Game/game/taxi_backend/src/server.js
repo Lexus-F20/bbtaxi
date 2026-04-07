@@ -102,40 +102,70 @@ app.get('/version', (req, res) => {
   });
 });
 
-// Отдаёт медиафайлы из Firebase Storage через Admin SDK.
-// Скачивает файл целиком в буфер и отдаёт одним ответом —
-// надёжнее для Flutter чем pipe() (нет проблем с незакрытым потоком).
 app.get('/media/*', async (req, res) => {
+
   const storagePath = req.params[0];
+
   console.log(`[media] Запрос: ${storagePath}`);
+
+
+
   try {
+
     const admin = require('./config/firebase');
+
     const bucket = admin.storage().bucket();
+
     const file = bucket.file(storagePath);
 
+
+
     const [exists] = await file.exists();
+
     if (!exists) {
+
       return res.status(404).json({ error: 'Файл не найден' });
+
     }
 
-    const [[metadata], [buffer]] = await Promise.all([
-      file.getMetadata(),
-      file.download(),
-    ]);
 
-    console.log(`[media] Отправка: ${storagePath} (${buffer.length} байт)`);
+
+    const [metadata] = await file.getMetadata();
+
+
 
     res.setHeader('Content-Type', metadata.contentType || 'application/octet-stream');
-    // НЕ ставим Content-Length — Railway может сжать тело (gzip), тогда
-    // реальный размер станет меньше заголовка и Flutter зависнет навсегда.
-    // Без Content-Length Node.js использует Transfer-Encoding: chunked,
-    // что корректно обрабатывается любым HTTP-клиентом.
-    res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-    res.end(buffer);
+
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+
+
+
+    file.createReadStream()
+
+      .on('error', (err) => {
+
+        console.error('Ошибка стрима:', err);
+
+        if (!res.headersSent) {
+
+          res.status(500).json({ error: 'Ошибка загрузки файла' });
+
+        }
+
+      })
+
+      .pipe(res);
+
+
+
   } catch (e) {
+
     console.error('Ошибка /media:', e.message);
+
     if (!res.headersSent) res.status(500).json({ error: e.message });
+
   }
+
 });
 
 // Скачать APK — стримит файл из Firebase Storage через Admin SDK.
@@ -232,9 +262,10 @@ app.locals.userSockets = userSockets;
 
 const PORT = process.env.PORT || 3000;
 
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, async () => {
   console.log(`Сервер запущен на порту ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
+  await initDatabase();
 });
 
 module.exports = { app, io };
