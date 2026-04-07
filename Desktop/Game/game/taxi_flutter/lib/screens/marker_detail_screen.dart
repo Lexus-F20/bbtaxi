@@ -194,7 +194,17 @@ class _MarkerDetailScreenState extends State<MarkerDetailScreen> {
 
                 List<String> mediaUrls = [];
                 if (pickedMedia.isNotEmpty) {
-                  mediaUrls = await MediaService.uploadFiles(pickedMedia, 'markers/reports');
+                  try {
+                    mediaUrls = await MediaService.uploadFiles(pickedMedia, 'markers/reports');
+                  } catch (e) {
+                    setDialogState(() => isUploading = false);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Ошибка загрузки: $e'), backgroundColor: Colors.red),
+                      );
+                    }
+                    return;
+                  }
                 }
 
                 final report = reportController.text.trim();

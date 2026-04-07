@@ -1,9 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
-import 'package:video_compress/video_compress.dart';
 
 import 'api_service.dart';
 
@@ -36,12 +34,12 @@ class MediaService {
     }
   }
 
-  /// Записать видео с камеры (макс. 5 минут).
+  /// Записать видео с камеры (макс. 3 минуты).
   static Future<List<XFile>> pickVideoFromCamera() async {
     try {
       final video = await _picker.pickVideo(
         source: ImageSource.camera,
-        maxDuration: const Duration(minutes: 5),
+        maxDuration: const Duration(minutes: 3),
       );
       return video != null ? [video] : [];
     } catch (e) {
@@ -50,40 +48,10 @@ class MediaService {
     }
   }
 
-  /// Сжать видео перед загрузкой (~480p, низкое качество для скорости).
-  /// Таймаут 3 минуты — если завис, возвращает null (грузим оригинал).
-  static Future<File?> _compressVideo(String path) async {
-    try {
-      final info = await VideoCompress.compressVideo(
-        path,
-        quality: VideoQuality.LowQuality,
-        deleteOrigin: false,
-        includeAudio: true,
-      ).timeout(const Duration(minutes: 3));
-      return info?.file;
-    } catch (e) {
-      debugPrint('compressVideo error (используем оригинал): $e');
-      return null;
-    }
-  }
-
   /// Загрузить файл через бэкенд в Firebase Storage и вернуть URL.
-  /// Видео автоматически сжимается перед загрузкой.
   static Future<String> uploadFile(XFile file, String folder) async {
     final uri = Uri.parse('$kBaseUrl/upload');
     final token = ApiService().token;
-
-    String filePath = file.path;
-    String fileName = file.name;
-
-    // Сжимаем видео перед отправкой
-    if (isVideo(file.path)) {
-      final compressed = await _compressVideo(file.path);
-      if (compressed != null) {
-        filePath = compressed.path;
-        fileName = compressed.uri.pathSegments.last;
-      }
-    }
 
     final request = http.MultipartRequest('POST', uri);
     if (token != null) {
@@ -91,13 +59,13 @@ class MediaService {
     }
     request.fields['folder'] = folder;
     request.files.add(
-      await http.MultipartFile.fromPath('file', filePath, filename: fileName),
+      await http.MultipartFile.fromPath('file', file.path, filename: file.name),
     );
 
-    final streamed = await request.send().timeout(const Duration(minutes: 5));
+    final streamed = await request.send().timeout(const Duration(minutes: 10));
     final body = await streamed.stream
         .bytesToString()
-        .timeout(const Duration(minutes: 5));
+        .timeout(const Duration(minutes: 2));
 
     if (streamed.statusCode != 200) {
       throw Exception('Ошибка загрузки (${streamed.statusCode}): $body');
