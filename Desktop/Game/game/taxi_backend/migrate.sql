@@ -66,3 +66,9 @@ CREATE TABLE IF NOT EXISTS routes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_routes_user_id ON routes(user_id);
+
+-- Медиафайлы маркеров и сообщений
+ALTER TABLE markers ADD COLUMN IF NOT EXISTS media_urls JSONB DEFAULT '[]';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS rating INTEGER DEFAULT 0;

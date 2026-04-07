@@ -62,10 +62,10 @@ class MediaService {
       await http.MultipartFile.fromPath('file', file.path, filename: file.name),
     );
 
-    final streamed = await request.send().timeout(const Duration(minutes: 10));
+    final streamed = await request.send().timeout(const Duration(minutes: 3));
     final body = await streamed.stream
         .bytesToString()
-        .timeout(const Duration(minutes: 2));
+        .timeout(const Duration(seconds: 30));
 
     if (streamed.statusCode != 200) {
       throw Exception('Ошибка загрузки (${streamed.statusCode}): $body');
