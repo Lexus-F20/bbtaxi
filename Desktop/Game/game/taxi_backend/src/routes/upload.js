@@ -2,6 +2,7 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const { randomUUID } = require('crypto');
 const admin = require('../config/firebase');
 
 const router = express.Router();
@@ -12,9 +13,9 @@ const upload = multer({
 });
 
 // Сохранение в Firebase Storage с таймаутом 30 секунд
-function saveWithTimeout(fileRef, buffer, metadata, timeoutMs = 30000) {
+function saveWithTimeout(fileRef, buffer, options, timeoutMs = 30000) {
   return Promise.race([
-    fileRef.save(buffer, { metadata }),
+    fileRef.save(buffer, options),
     new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Firebase Storage timeout (30s)')), timeoutMs)
     ),
@@ -24,8 +25,8 @@ function saveWithTimeout(fileRef, buffer, metadata, timeoutMs = 30000) {
 /**
  * POST /upload
  * Загружает файл в Firebase Storage.
- * Возвращает URL через прокси-эндпоинт /media/* — не требует никаких
- * IAM-прав (ни signBlob, ни публичного доступа к Storage).
+ * Возвращает прямой URL Firebase Storage с download-токеном —
+ * не требует IAM signBlob, не зависит от Railway прокси.
  */
 router.post('/', upload.single('file'), async (req, res) => {
   try {
@@ -36,6 +37,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     const folder = (req.body.folder || 'uploads').replace(/[^a-zA-Z0-9_\-/]/g, '');
     const ext = path.extname(req.file.originalname).toLowerCase() || '.jpg';
     const fileName = `${folder}/${Date.now()}${ext}`;
+    const downloadToken = randomUUID();
 
     console.log(`[upload] Сохранение: ${fileName} (${req.file.size} байт)`);
 
@@ -43,18 +45,20 @@ router.post('/', upload.single('file'), async (req, res) => {
     const fileRef = bucket.file(fileName);
 
     await saveWithTimeout(fileRef, req.file.buffer, {
-      contentType: req.file.mimetype,
+      metadata: {
+        contentType: req.file.mimetype,
+        metadata: {
+          firebaseStorageDownloadTokens: downloadToken,
+        },
+      },
     });
 
     console.log(`[upload] Сохранено в Storage: ${fileName}`);
 
-    // URL через наш прокси /media — работает без signBlob
-    // fileName уже безопасен (только буквы/цифры/дефис/слэш)
-    // НЕ используем encodeURIComponent — nginx блокирует %2F в пути
-    const host = process.env.RAILWAY_PUBLIC_DOMAIN
-      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-      : `${req.protocol}://${req.get('host')}`;
-    const mediaUrl = `${host}/media/${fileName}`;
+    // Прямой URL Firebase Storage — работает без IAM и без Railway прокси
+    // encodeURIComponent кодирует / как %2F — Firebase Storage API требует этого
+    const encodedPath = encodeURIComponent(fileName);
+    const mediaUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodedPath}?alt=media&token=${downloadToken}`;
 
     console.log(`[upload] URL: ${mediaUrl}`);
 
