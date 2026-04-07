@@ -17,12 +17,14 @@ if (!admin.apps.length) {
       serviceAccount = require(path.resolve(serviceAccountPath));
     }
 
+    const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || 'bbdron-c5dcf.firebasestorage.app';
+
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'bbdron-c5dcf.firebasestorage.app',
+      storageBucket: storageBucket,
     });
 
-    console.log('Firebase Admin SDK инициализирован успешно');
+    console.log(`Firebase Admin SDK инициализирован успешно (bucket: ${storageBucket})`);
   } catch (error) {
     console.error('Ошибка инициализации Firebase Admin SDK:', error.message);
     console.warn('Push-уведомления через FCM недоступны. Добавьте файл firebase-service-account.json');

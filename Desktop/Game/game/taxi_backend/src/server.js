@@ -111,14 +111,21 @@ app.get('/media/*', async (req, res) => {
   try {
     const admin = require('./config/firebase');
     const bucket = admin.storage().bucket();
+    console.log(`[media] Bucket: ${bucket.name}`);
+    
     const file = bucket.file(storagePath);
+    console.log(`[media] Проверка файла: ${storagePath}`);
 
     const [exists] = await file.exists();
+    console.log(`[media] Файл существует: ${exists}`);
+    
     if (!exists) {
+      console.log(`[media] Файл не найден: ${storagePath}`);
       return res.status(404).json({ error: 'Файл не найден' });
     }
 
     const [metadata] = await file.getMetadata();
+    console.log(`[media] Размер: ${metadata.size}, Content-Type: ${metadata.contentType}`);
 
     res.setHeader('Content-Type', metadata.contentType || 'application/octet-stream');
     // no-transform запрещает промежуточным прокси (Railway) сжимать тело —
