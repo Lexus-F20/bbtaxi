@@ -1351,8 +1351,6 @@ class _InlineAudioPlayerState extends State<_InlineAudioPlayer> {
                 SliderTheme(
                   data: SliderTheme.of(context).copyWith(
                     trackHeight: 2,
-                    thumbRadius: 5,
-                    overlayRadius: 10,
                     activeTrackColor: Colors.white,
                     inactiveTrackColor: Colors.white30,
                     thumbColor: Colors.white,
