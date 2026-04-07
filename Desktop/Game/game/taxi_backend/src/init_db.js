@@ -29,6 +29,7 @@ async function initDatabase() {
         reject_reason TEXT,
         report TEXT,
         done_at TIMESTAMP,
+        media_urls JSONB DEFAULT '[]',
         created_at TIMESTAMP DEFAULT NOW()
       );
 
@@ -55,6 +56,7 @@ async function initDatabase() {
         sender_id INTEGER REFERENCES users(id),
         receiver_id INTEGER REFERENCES users(id),
         text TEXT NOT NULL,
+        media_url TEXT,
         is_read BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT NOW()
       );
@@ -91,6 +93,14 @@ async function initDatabase() {
         color VARCHAR(20) DEFAULT 'blue',
         created_at TIMESTAMP DEFAULT NOW()
       );
+    `);
+
+    // Добавить новые колонки если их нет (миграция для существующих БД)
+    await pool.query(`
+      ALTER TABLE markers ADD COLUMN IF NOT EXISTS media_urls JSONB DEFAULT '[]';
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS rating INTEGER DEFAULT 0;
     `);
 
     // Создать администратора по умолчанию если нет пользователей

@@ -2,6 +2,7 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const crypto = require('crypto');
 const admin = require('../config/firebase');
 
 const router = express.Router();
@@ -18,6 +19,10 @@ const upload = multer({
  * Multipart-форма:
  *   file   — файл (обязательно)
  *   folder — подпапка в Storage (по умолчанию "uploads")
+ *
+ * Использует Firebase download token вместо getSignedUrl — не требует
+ * разрешения iam.serviceAccounts.signBlob (которого нет на Railway).
+ * URL формируется так же как Firebase Client SDK.
  */
 router.post('/', upload.single('file'), async (req, res) => {
   try {
@@ -32,18 +37,25 @@ router.post('/', upload.single('file'), async (req, res) => {
     const bucket = admin.storage().bucket();
     const fileRef = bucket.file(fileName);
 
-    // Загружаем файл в Storage (без ACL — совместимо с uniform bucket-level access)
+    // Генерируем download token — как делает Firebase Client SDK
+    const downloadToken = crypto.randomUUID();
+
+    // Загружаем файл с токеном в metadata
     await fileRef.save(req.file.buffer, {
-      metadata: { contentType: req.file.mimetype },
+      metadata: {
+        contentType: req.file.mimetype,
+        metadata: {
+          firebaseStorageDownloadTokens: downloadToken,
+        },
+      },
     });
 
-    // Получаем подписанный URL на 10 лет
-    const [signedUrl] = await fileRef.getSignedUrl({
-      action: 'read',
-      expires: '01-01-2035',
-    });
+    // Формируем публичный URL с токеном (не требует signBlob)
+    const bucketName = bucket.name;
+    const encodedPath = encodeURIComponent(fileName);
+    const downloadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedPath}?alt=media&token=${downloadToken}`;
 
-    return res.json({ url: signedUrl });
+    return res.json({ url: downloadUrl });
   } catch (error) {
     console.error('Ошибка загрузки файла:', error);
     return res.status(500).json({ error: `Ошибка загрузки: ${error.message}` });

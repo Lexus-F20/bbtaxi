@@ -468,7 +468,11 @@ router.put('/:id/complete', async (req, res) => {
     }
 
     // Объединяем существующие фото маркера с новыми из отчёта
-    const existing = Array.isArray(marker.media_urls) ? marker.media_urls : [];
+    let existing = marker.media_urls || [];
+    if (typeof existing === 'string') {
+      try { existing = JSON.parse(existing); } catch (_) { existing = []; }
+    }
+    if (!Array.isArray(existing)) existing = [];
     const reportMediaUrls = Array.isArray(media_urls) ? media_urls : [];
     const allMediaUrls = [...existing, ...reportMediaUrls];
 
@@ -655,7 +659,11 @@ router.post('/:id/media', async (req, res) => {
       return res.status(404).json({ error: 'Маркер не найден' });
     }
 
-    const current = markerResult.rows[0].media_urls || [];
+    let current = markerResult.rows[0].media_urls || [];
+    if (typeof current === 'string') {
+      try { current = JSON.parse(current); } catch (_) { current = []; }
+    }
+    if (!Array.isArray(current)) current = [];
     const updated = [...current, ...media_urls];
 
     const result = await pool.query(
