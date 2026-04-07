@@ -126,7 +126,10 @@ app.get('/media/*', async (req, res) => {
     console.log(`[media] Отправка: ${storagePath} (${buffer.length} байт)`);
 
     res.setHeader('Content-Type', metadata.contentType || 'application/octet-stream');
-    res.setHeader('Content-Length', buffer.length);
+    // НЕ ставим Content-Length — Railway может сжать тело (gzip), тогда
+    // реальный размер станет меньше заголовка и Flutter зависнет навсегда.
+    // Без Content-Length Node.js использует Transfer-Encoding: chunked,
+    // что корректно обрабатывается любым HTTP-клиентом.
     res.setHeader('Cache-Control', 'public, max-age=31536000');
     res.end(buffer);
   } catch (e) {

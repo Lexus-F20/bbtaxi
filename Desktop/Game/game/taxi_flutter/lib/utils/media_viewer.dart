@@ -1,9 +1,9 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../services/api_service.dart';
 import '../services/media_service.dart';
+import 'backend_image.dart';
 
 /// Открыть фото или видео на весь экран.
 /// Фото и видео кешируются — при повторном открытии загружаются с диска.
@@ -44,13 +44,17 @@ class _FullScreenImageScreen extends StatelessWidget {
         child: InteractiveViewer(
           minScale: 0.5,
           maxScale: 6.0,
-          child: CachedNetworkImage(
-            imageUrl: imageUrl,
+          child: BackendImage(
+            url: imageUrl,
             fit: BoxFit.contain,
-            placeholder: (_, __) =>
-                const Center(child: CircularProgressIndicator(color: Colors.white)),
-            errorWidget: (_, __, ___) =>
-                const Icon(Icons.broken_image, color: Colors.white38, size: 80),
+            placeholder: const Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
+            errorWidget: const Icon(
+              Icons.broken_image,
+              color: Colors.white38,
+              size: 80,
+            ),
           ),
         ),
       ),

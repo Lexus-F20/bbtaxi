@@ -14,8 +14,8 @@ import '../services/media_service.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../utils/coordinate_utils.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../utils/media_viewer.dart';
+import '../utils/backend_image.dart';
 import 'user_profile_screen.dart';
 
 class MarkerDetailScreen extends StatefulWidget {
@@ -519,11 +519,11 @@ class _MarkerDetailScreenState extends State<MarkerDetailScreen> {
                                         )
                                       : ClipRRect(
                                           borderRadius: BorderRadius.circular(8),
-                                          child: CachedNetworkImage(
-                                            imageUrl: normalizeMediaUrl(url),
+                                          child: BackendImage(
+                                            url: url,
+                                            width: 100,
+                                            height: 100,
                                             fit: BoxFit.cover,
-                                            placeholder: (_, __) => const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
-                                            errorWidget: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white38),
                                           ),
                                         ),
                                 ),
