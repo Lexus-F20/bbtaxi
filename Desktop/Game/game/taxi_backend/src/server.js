@@ -102,52 +102,75 @@ app.get('/version', (req, res) => {
   });
 });
 
-// Отдаёт медиафайлы из Firebase Storage через Admin SDK — стриминг.
-// Content-Length из метаданных + no-transform запрещают Railway gzip-сжимать тело,
-// поэтому размер заголовка совпадает с реальным и Flutter не зависает.
+// Отдаёт медиафайлы из Firebase Storage.
+// Поддерживает Range-запросы (RFC 7233) — ExoPlayer использует их для
+// кеширования и перемотки видео без буферизации всего файла.
 app.get('/media/*', async (req, res) => {
   const storagePath = req.params[0];
-  console.log(`[media] Запрос: ${storagePath}`);
   try {
     const admin = require('./config/firebase');
     const bucket = admin.storage().bucket();
-    console.log(`[media] Bucket: ${bucket.name}`);
-    
     const file = bucket.file(storagePath);
-    console.log(`[media] Проверка файла: ${storagePath}`);
 
     const [exists] = await file.exists();
-    console.log(`[media] Файл существует: ${exists}`);
-    
-    if (!exists) {
-      console.log(`[media] Файл не найден: ${storagePath}`);
-      return res.status(404).json({ error: 'Файл не найден' });
-    }
+    if (!exists) return res.status(404).json({ error: 'Файл не найден' });
 
     const [metadata] = await file.getMetadata();
-    console.log(`[media] Размер: ${metadata.size}, Content-Type: ${metadata.contentType}`);
+    const fileSize = parseInt(metadata.size) || 0;
+    const contentType = metadata.contentType || 'application/octet-stream';
 
-    res.setHeader('Content-Type', metadata.contentType || 'application/octet-stream');
-    // no-transform запрещает промежуточным прокси (Railway) сжимать тело —
-    // иначе Content-Length не совпадёт с реальным размером и Flutter зависнет.
-    res.setHeader('Cache-Control', 'no-store, no-transform');
-    if (metadata.size) {
-      res.setHeader('Content-Length', metadata.size);
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'no-transform');
+    res.setHeader('Accept-Ranges', 'bytes');
+
+    const range = req.headers['range'];
+
+    if (range && fileSize > 0) {
+      // Парсим Range: bytes=start-end
+      const match = range.match(/bytes=(\d+)-(\d*)/);
+      if (!match) {
+        res.setHeader('Content-Range', `bytes */${fileSize}`);
+        return res.status(416).send('Range Not Satisfiable');
+      }
+
+      const start = parseInt(match[1], 10);
+      const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+
+      if (start >= fileSize || end >= fileSize || start > end) {
+        res.setHeader('Content-Range', `bytes */${fileSize}`);
+        return res.status(416).send('Range Not Satisfiable');
+      }
+
+      console.log(`[media] Range ${start}-${end}/${fileSize}: ${storagePath}`);
+
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+      res.setHeader('Content-Length', end - start + 1);
+
+      file.createReadStream({ start, end })
+        .on('error', (err) => {
+          console.error('[media] Range стрим ошибка:', err);
+          if (!res.headersSent) res.status(500).json({ error: err.message });
+          else res.destroy(err);
+        })
+        .pipe(res);
+
+    } else {
+      // Полный файл
+      console.log(`[media] Full ${fileSize}: ${storagePath}`);
+      if (fileSize) res.setHeader('Content-Length', fileSize);
+
+      file.createReadStream()
+        .on('error', (err) => {
+          console.error('[media] Стрим ошибка:', err);
+          if (!res.headersSent) res.status(500).json({ error: err.message });
+          else res.destroy(err);
+        })
+        .pipe(res);
     }
 
-    file.createReadStream()
-      .on('error', (err) => {
-        console.error('Ошибка стрима:', err);
-        if (!res.headersSent) {
-          res.status(500).json({ error: 'Ошибка загрузки файла' });
-        } else {
-          res.destroy(err);
-        }
-      })
-      .pipe(res);
-
   } catch (e) {
-    console.error('Ошибка /media:', e.message);
+    console.error('[media] Ошибка:', e.message);
     if (!res.headersSent) res.status(500).json({ error: e.message });
   }
 });
