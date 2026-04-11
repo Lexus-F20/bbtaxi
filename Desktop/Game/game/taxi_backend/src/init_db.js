@@ -96,6 +96,22 @@ async function initDatabase() {
         color VARCHAR(20) DEFAULT 'blue',
         created_at TIMESTAMP DEFAULT NOW()
       );
+
+      CREATE TABLE IF NOT EXISTS conversations (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS conversation_members (
+        id SERIAL PRIMARY KEY,
+        conversation_id INTEGER REFERENCES conversations(id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id),
+        role VARCHAR(20) DEFAULT 'member',
+        joined_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(conversation_id, user_id)
+      );
     `);
 
     // Добавить новые колонки если их нет (миграция для существующих БД)
@@ -107,6 +123,7 @@ async function initDatabase() {
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS forwarded_from_id INTEGER REFERENCES messages(id);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS rating INTEGER DEFAULT 0;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS conversation_id INTEGER REFERENCES conversations(id);
     `);
 
     // Создать администратора по умолчанию если нет пользователей
