@@ -365,8 +365,9 @@ class _GlobalChatTabState extends State<_GlobalChatTab>
         break;
       case _MessageAction.forward:
         final target = await _pickForwardTarget();
-        if (target == null) return;
-        await ApiService().forwardMessage(msg.id, receiverId: target);
+        if (target == null) return; // закрыл шторку без выбора
+        final receiverId = target == -1 ? null : target; // -1 = общий чат
+        await ApiService().forwardMessage(msg.id, receiverId: receiverId);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Сообщение переслано'), backgroundColor: Colors.green),
@@ -376,6 +377,7 @@ class _GlobalChatTabState extends State<_GlobalChatTab>
     }
   }
 
+  /// Возвращает: null = отмена, -1 = общий чат, >0 = userId личного чата
   Future<int?> _pickForwardTarget() async {
     final convs = await ApiService().getChatConversations();
     if (!mounted) return null;
@@ -388,10 +390,10 @@ class _GlobalChatTabState extends State<_GlobalChatTab>
           children: [
             ListTile(
               leading: const Icon(Icons.forum, color: Colors.white70),
-              title: const Text('Переслать в общий чат', style: TextStyle(color: Colors.white)),
-              onTap: () => Navigator.pop(_, null),
+              title: const Text('Общий чат', style: TextStyle(color: Colors.white)),
+              onTap: () => Navigator.pop(_, -1),
             ),
-            const Divider(color: Colors.white12),
+            if (convs.isNotEmpty) const Divider(color: Colors.white12),
             ...convs.map((c) => ListTile(
                   leading: const Icon(Icons.person, color: Colors.white54),
                   title: Text(c.userName, style: const TextStyle(color: Colors.white)),
@@ -1032,8 +1034,10 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
         break;
       case _MessageAction.forward:
         final target = await _pickForwardTarget();
+        if (target == null) return; // закрыл шторку без выбора
         if (!mounted) return;
-        await ApiService().forwardMessage(msg.id, receiverId: target);
+        final receiverId = target == -1 ? null : target;
+        await ApiService().forwardMessage(msg.id, receiverId: receiverId);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Сообщение переслано'), backgroundColor: Colors.green),
@@ -1043,6 +1047,7 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
     }
   }
 
+  /// Возвращает: null = отмена, -1 = общий чат, >0 = userId личного чата
   Future<int?> _pickForwardTarget() async {
     final convs = await ApiService().getChatConversations();
     if (!mounted) return null;
@@ -1055,10 +1060,10 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.forum, color: Colors.white70),
-              title: const Text('Переслать в общий чат', style: TextStyle(color: Colors.white)),
-              onTap: () => Navigator.pop(_, null),
+              title: const Text('Общий чат', style: TextStyle(color: Colors.white)),
+              onTap: () => Navigator.pop(_, -1),
             ),
-            const Divider(color: Colors.white12),
+            if (convs.isNotEmpty) const Divider(color: Colors.white12),
             ...convs.map((c) => ListTile(
                   leading: const Icon(Icons.person, color: Colors.white54),
                   title: Text(c.userName, style: const TextStyle(color: Colors.white)),
@@ -2009,8 +2014,47 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
         await ApiService().deleteMessage(msg.id);
         break;
       case _MessageAction.forward:
+        final target = await _pickForwardTarget();
+        if (target == null) return;
+        if (!mounted) return;
+        final receiverId = target == -1 ? null : target;
+        await ApiService().forwardMessage(msg.id, receiverId: receiverId);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Сообщение переслано'), backgroundColor: Colors.green),
+          );
+        }
         break;
     }
+  }
+
+  /// Возвращает: null = отмена, -1 = общий чат, >0 = userId личного чата
+  Future<int?> _pickForwardTarget() async {
+    final convs = await ApiService().getChatConversations();
+    if (!mounted) return null;
+    return showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      builder: (_) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.forum, color: Colors.white70),
+              title: const Text('Общий чат', style: TextStyle(color: Colors.white)),
+              onTap: () => Navigator.pop(_, -1),
+            ),
+            if (convs.isNotEmpty) const Divider(color: Colors.white12),
+            ...convs.map((c) => ListTile(
+                  leading: const Icon(Icons.person, color: Colors.white54),
+                  title: Text(c.userName, style: const TextStyle(color: Colors.white)),
+                  subtitle: Text(c.userRole, style: const TextStyle(color: Colors.white38)),
+                  onTap: () => Navigator.pop(_, c.userId),
+                )),
+          ],
+        ),
+      ),
+    );
   }
 }
 
