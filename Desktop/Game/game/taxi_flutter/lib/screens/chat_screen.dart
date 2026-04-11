@@ -2176,6 +2176,129 @@ class _GroupInfoScreenState extends State<GroupInfoScreen>
     }
   }
 
+  Future<void> _showAddMembersSheet() async {
+    // Загружаем всех пользователей и фильтруем уже состоящих
+    List<UserModel> allUsers = [];
+    try {
+      allUsers = await ApiService().getChatUsers();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка загрузки: $e'), backgroundColor: Colors.red),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+
+    final memberIds = _members.map((m) => m['id'] as int).toSet();
+    final available = allUsers.where((u) => !memberIds.contains(u.id)).toList();
+
+    if (available.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Все пользователи уже в беседе')),
+      );
+      return;
+    }
+
+    final selected = <int>{};
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E1E1E),
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.person_add, color: Colors.white70),
+                      const SizedBox(width: 10),
+                      const Text(
+                        'Добавить участников',
+                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      const Spacer(),
+                      if (selected.isNotEmpty)
+                        TextButton(
+                          onPressed: () async {
+                            Navigator.pop(ctx);
+                            await _addMembers(selected.toList());
+                          },
+                          child: Text(
+                            'Добавить (${selected.length})',
+                            style: const TextStyle(color: Colors.lightBlueAccent),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(ctx).size.height * 0.5,
+                  ),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: available.length,
+                    itemBuilder: (ctx2, i) {
+                      final u = available[i];
+                      final isSelected = selected.contains(u.id);
+                      final roleColor = u.role == 'admin' ? Colors.redAccent : Colors.lightBlueAccent;
+                      return CheckboxListTile(
+                        value: isSelected,
+                        onChanged: (_) => setSheetState(() {
+                          if (isSelected) { selected.remove(u.id); }
+                          else { selected.add(u.id); }
+                        }),
+                        secondary: CircleAvatar(
+                          backgroundColor: roleColor.withValues(alpha: 0.2),
+                          child: Text(
+                            u.name.isNotEmpty ? u.name[0].toUpperCase() : '?',
+                            style: TextStyle(color: roleColor, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        title: Text(u.name, style: const TextStyle(color: Colors.white)),
+                        subtitle: Text(
+                          u.role == 'admin' ? 'Администратор' : 'Пилот',
+                          style: TextStyle(color: roleColor, fontSize: 12),
+                        ),
+                        activeColor: const Color(0xFF1A237E),
+                        checkColor: Colors.white,
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _addMembers(List<int> userIds) async {
+    int added = 0;
+    for (final uid in userIds) {
+      try {
+        await ApiService().addConversationMember(_conv.id, uid);
+        added++;
+      } catch (_) {}
+    }
+    await _loadMembers();
+    if (mounted && added > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Добавлено участников: $added'), backgroundColor: Colors.green),
+      );
+    }
+  }
+
   Future<void> _removeMember(Map<String, dynamic> member) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -2327,9 +2450,24 @@ class _GroupInfoScreenState extends State<GroupInfoScreen>
                 _membersLoading
                     ? const Center(child: CircularProgressIndicator())
                     : ListView.builder(
-                        itemCount: _members.length + 1,
+                        itemCount: _members.length + (widget.isAdmin ? 2 : 1),
                         itemBuilder: (context, i) {
-                          if (i == _members.length) {
+                          // Кнопка "Добавить участников" (только для админа)
+                          if (widget.isAdmin && i == _members.length) {
+                            return Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.lightBlueAccent,
+                                  side: const BorderSide(color: Colors.lightBlueAccent),
+                                ),
+                                icon: const Icon(Icons.person_add_outlined),
+                                label: const Text('Добавить участников'),
+                                onPressed: _showAddMembersSheet,
+                              ),
+                            );
+                          }
+                          if (i == _members.length + (widget.isAdmin ? 1 : 0)) {
                             // Кнопка "Покинуть беседу" в конце списка
                             return Padding(
                               padding: const EdgeInsets.all(16),
