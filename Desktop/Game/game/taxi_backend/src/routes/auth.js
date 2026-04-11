@@ -20,7 +20,7 @@ router.post('/login', async (req, res) => {
     }
 
     const result = await pool.query(
-      'SELECT id, login, name, password_hash, role, is_active, fcm_token FROM users WHERE login = $1',
+      'SELECT id, login, name, password_hash, role, is_active, fcm_token, avatar_url FROM users WHERE login = $1',
       [login]
     );
 
@@ -58,6 +58,7 @@ router.post('/login', async (req, res) => {
         name: user.name,
         role: user.role,
         fcmToken: user.fcm_token,
+        avatar_url: user.avatar_url,
       },
     });
   } catch (error) {
@@ -99,7 +100,7 @@ router.post('/update-fcm-token', require('../middleware/auth').authenticateToken
  */
 router.put('/profile', require('../middleware/auth').authenticateToken, async (req, res) => {
   try {
-    const { name, login, password } = req.body;
+    const { name, login, password, avatar_url } = req.body;
     const userId = req.user.id;
 
     const updates = [];
@@ -131,13 +132,18 @@ router.put('/profile', require('../middleware/auth').authenticateToken, async (r
       params.push(hash);
     }
 
+    if (avatar_url !== undefined) {
+      updates.push(`avatar_url = $${params.length + 1}`);
+      params.push(avatar_url || null);
+    }
+
     if (updates.length === 0) {
       return res.status(400).json({ error: 'Нет данных для обновления' });
     }
 
     params.push(userId);
     const result = await pool.query(
-      `UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length} RETURNING id, login, name, role`,
+      `UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length} RETURNING id, login, name, role, avatar_url`,
       params
     );
 

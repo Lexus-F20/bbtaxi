@@ -14,7 +14,7 @@ router.get('/', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT
-         c.id, c.name, c.created_by, c.created_at,
+         c.id, c.name, c.created_by, c.created_at, c.avatar_url,
          last_msg.text    AS last_message,
          last_msg.created_at AS last_message_time,
          (SELECT COUNT(*) FROM messages msg
@@ -112,7 +112,7 @@ router.get('/:id/messages', async (req, res) => {
     const result = await pool.query(
       `SELECT m.id, m.text, m.media_url, m.created_at, m.is_read,
               m.edited_at, m.is_deleted, m.forwarded_from_id, m.conversation_id,
-              u.id AS sender_id, u.name AS sender_name, u.role AS sender_role
+              u.id AS sender_id, u.name AS sender_name, u.role AS sender_role, u.avatar_url AS sender_avatar_url
        FROM messages m
        LEFT JOIN users u ON m.sender_id = u.id
        WHERE m.conversation_id = $1
@@ -169,11 +169,11 @@ router.post('/:id/messages', async (req, res) => {
     const message = msgResult.rows[0];
 
     const senderResult = await pool.query(
-      'SELECT name, role FROM users WHERE id = $1', [userId]
+      'SELECT name, role, avatar_url FROM users WHERE id = $1', [userId]
     );
     const sender = senderResult.rows[0];
 
-    const fullMessage = { ...message, sender_name: sender?.name, sender_role: sender?.role };
+    const fullMessage = { ...message, sender_name: sender?.name, sender_role: sender?.role, sender_avatar_url: sender?.avatar_url || null };
 
     // Рассылаем всем участникам беседы
     const io = req.app.locals.io;
@@ -231,7 +231,7 @@ router.get('/:id/members', async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT u.id, u.name, u.role, cm.role AS member_role, cm.joined_at
+      `SELECT u.id, u.name, u.role, u.avatar_url, cm.role AS member_role, cm.joined_at
        FROM conversation_members cm
        JOIN users u ON u.id = cm.user_id
        WHERE cm.conversation_id = $1
@@ -350,24 +350,41 @@ router.patch('/:id/members/:userId', async (req, res) => {
 router.put('/:id', async (req, res) => {
   const userId = req.user.id;
   const convId = parseInt(req.params.id);
-  const { name } = req.body;
-
-  if (!name || String(name).trim() === '') {
-    return res.status(400).json({ error: 'Название не может быть пустым' });
-  }
+  const { name, avatar_url } = req.body;
 
   const roleCheck = await pool.query(
     `SELECT role FROM conversation_members WHERE conversation_id = $1 AND user_id = $2`,
     [convId, userId]
   );
   if (roleCheck.rows.length === 0 || roleCheck.rows[0].role !== 'admin') {
-    return res.status(403).json({ error: 'Только администратор может изменять название' });
+    return res.status(403).json({ error: 'Только администратор может изменять беседу' });
+  }
+
+  const updates = [];
+  const params = [];
+
+  if (name !== undefined) {
+    if (!name || String(name).trim() === '') {
+      return res.status(400).json({ error: 'Название не может быть пустым' });
+    }
+    updates.push(`name = $${params.length + 1}`);
+    params.push(String(name).trim());
+  }
+
+  if (avatar_url !== undefined) {
+    updates.push(`avatar_url = $${params.length + 1}`);
+    params.push(avatar_url || null);
+  }
+
+  if (updates.length === 0) {
+    return res.status(400).json({ error: 'Нет данных для обновления' });
   }
 
   try {
+    params.push(convId);
     const result = await pool.query(
-      `UPDATE conversations SET name = $1 WHERE id = $2 RETURNING *`,
-      [String(name).trim(), convId]
+      `UPDATE conversations SET ${updates.join(', ')} WHERE id = $${params.length} RETURNING *`,
+      params
     );
     return res.json({ conversation: result.rows[0] });
   } catch (err) {

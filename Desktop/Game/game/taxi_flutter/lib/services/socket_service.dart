@@ -32,6 +32,7 @@ class SocketService {
   // Коллбэки — чат
   Function(ChatMessage)? onGlobalMessage;
   Function(ChatMessage)? onDirectMessage;
+  Function(int conversationId, ChatMessage message)? onConversationMessage;
   Function(ChatMessage)? onChatUpdated;
   Function(ChatMessage)? onChatDeleted;
 
@@ -159,6 +160,17 @@ class SocketService {
       }
     });
 
+    _socket!.on('chat:conversation', (data) {
+      try {
+        final map = data as Map<String, dynamic>;
+        final convId = map['conversation_id'] as int;
+        final message = ChatMessage.fromJson(map['message'] as Map<String, dynamic>);
+        onConversationMessage?.call(convId, message);
+      } catch (e) {
+        debugPrint('Ошибка парсинга chat:conversation — $e');
+      }
+    });
+
     _socket!.on('chat:updated', (data) {
       try {
         final message = ChatMessage.fromJson(data as Map<String, dynamic>);
@@ -205,6 +217,7 @@ class SocketService {
     onNotificationNew = null;
     onGlobalMessage = null;
     onDirectMessage = null;
+    onConversationMessage = null;
     onChatUpdated = null;
     onChatDeleted = null;
   }

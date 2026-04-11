@@ -1,11 +1,11 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
-import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
 
 import '../services/api_service.dart';
-import '../services/media_service.dart';
 import '../services/media_cache.dart';
+import '../services/media_service.dart';
 import 'backend_image.dart';
 
 /// Открыть фото или видео на весь экран.
@@ -83,7 +83,7 @@ class _VideoPlayerScreenState extends State<_VideoPlayerScreen> {
   VideoPlayerController? _controller;
   bool _isLoading = true;
   String? _error;
-  File? _cachedVideoFile;
+  double _downloadPercent = 0;
 
   @override
   void initState() {
@@ -93,9 +93,21 @@ class _VideoPlayerScreenState extends State<_VideoPlayerScreen> {
 
   Future<void> _initPlayer() async {
     try {
-      _cachedVideoFile = await MediaCache.instance.getSingleFile(widget.videoUrl);
-      _controller = VideoPlayerController.file(_cachedVideoFile!);
-      await _controller!.initialize();
+      // Если видео уже в кеше — играем с диска (мгновенно)
+      // Иначе — играем из сети и качаем в фон для следующего раза
+      final cached = await MediaCache.getCachedFile(widget.videoUrl);
+      if (cached != null) {
+        _controller = VideoPlayerController.file(cached);
+      } else {
+        _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
+        // Фоновая загрузка в кеш пока пользователь смотрит
+        MediaCache.getFile(widget.videoUrl).ignore();
+      }
+
+      await _controller!.initialize().timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => throw Exception('Таймаут инициализации видео (20с)'),
+      );
       _controller!.addListener(() {
         if (mounted) setState(() {});
       });
@@ -122,26 +134,40 @@ class _VideoPlayerScreenState extends State<_VideoPlayerScreen> {
         elevation: 0,
       ),
       body: _isLoading
-          ? const Center(
+          ? Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(color: Colors.white),
-                  SizedBox(height: 12),
-                  Text('Загрузка видео...', style: TextStyle(color: Colors.white54)),
+                  CircularProgressIndicator(
+                    color: Colors.white,
+                    value: _downloadPercent > 0 ? _downloadPercent : null,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    _downloadPercent > 0
+                        ? 'Загрузка ${(_downloadPercent * 100).toInt()}%...'
+                        : 'Загрузка видео...',
+                    style: const TextStyle(color: Colors.white54),
+                  ),
                 ],
               ),
             )
           : _error != null
               ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.error_outline, color: Colors.red, size: 48),
-                      const SizedBox(height: 8),
-                      Text('Ошибка воспроизведения',
-                          style: const TextStyle(color: Colors.white54)),
-                    ],
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                        const SizedBox(height: 8),
+                        Text(
+                          _error!,
+                          style: const TextStyle(color: Colors.white54, fontSize: 12),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
                   ),
                 )
               : Center(
@@ -232,8 +258,7 @@ class _AudioPlayerScreenState extends State<_AudioPlayerScreen> {
   }
 
   Future<void> _initAudio() async {
-    final file = await MediaCache.instance.getSingleFile(widget.audioUrl);
-    await _player.setSourceDeviceFile(file.path);
+    await _player.setSourceUrl(widget.audioUrl);
     _player.onDurationChanged.listen((d) => setState(() => _duration = d));
     _player.onPositionChanged.listen((p) => setState(() => _position = p));
     _player.onPlayerComplete.listen((_) => setState(() => _playing = false));

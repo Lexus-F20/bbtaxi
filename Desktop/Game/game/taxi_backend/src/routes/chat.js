@@ -19,10 +19,10 @@ router.get('/global', async (req, res) => {
 
     const result = await pool.query(
       `SELECT m.id, m.text, m.media_url, m.created_at, m.is_read, m.edited_at, m.is_deleted, m.forwarded_from_id,
-              u.id AS sender_id, u.name AS sender_name, u.role AS sender_role
+              u.id AS sender_id, u.name AS sender_name, u.role AS sender_role, u.avatar_url AS sender_avatar_url
        FROM messages m
        LEFT JOIN users u ON m.sender_id = u.id
-       WHERE m.receiver_id IS NULL
+       WHERE m.receiver_id IS NULL AND m.conversation_id IS NULL
        ORDER BY m.created_at DESC
        LIMIT $1 OFFSET $2`,
       [limit, offset]
@@ -64,7 +64,7 @@ router.post('/global', async (req, res) => {
 
     // Получаем имя отправителя
     const userResult = await pool.query(
-      'SELECT name, role FROM users WHERE id = $1',
+      'SELECT name, role, avatar_url FROM users WHERE id = $1',
       [senderId]
     );
     const sender = userResult.rows[0];
@@ -73,6 +73,7 @@ router.post('/global', async (req, res) => {
       ...message,
       sender_name: sender?.name,
       sender_role: sender?.role,
+      sender_avatar_url: sender?.avatar_url || null,
     };
 
     // Рассылаем всем подключённым через Socket.io
@@ -102,7 +103,7 @@ router.get('/direct/:userId', async (req, res) => {
 
     const result = await pool.query(
       `SELECT m.id, m.text, m.media_url, m.created_at, m.is_read, m.edited_at, m.is_deleted, m.forwarded_from_id,
-              u.id AS sender_id, u.name AS sender_name, u.role AS sender_role,
+              u.id AS sender_id, u.name AS sender_name, u.role AS sender_role, u.avatar_url AS sender_avatar_url,
               r.id AS receiver_id, r.name AS receiver_name
        FROM messages m
        LEFT JOIN users u ON m.sender_id = u.id
@@ -169,7 +170,7 @@ router.post('/direct/:userId', async (req, res) => {
 
     // Получаем имя отправителя
     const senderResult = await pool.query(
-      'SELECT name, role FROM users WHERE id = $1',
+      'SELECT name, role, avatar_url FROM users WHERE id = $1',
       [senderId]
     );
     const sender = senderResult.rows[0];
@@ -178,6 +179,7 @@ router.post('/direct/:userId', async (req, res) => {
       ...message,
       sender_name: sender?.name,
       sender_role: sender?.role,
+      sender_avatar_url: sender?.avatar_url || null,
       receiver_name: receiver.name,
     };
 
@@ -225,12 +227,12 @@ router.get('/users', async (req, res) => {
     const currentUserId = req.user.id;
 
     const result = await pool.query(
-      `SELECT u.id, u.name, u.role, u.is_active,
+      `SELECT u.id, u.name, u.role, u.is_active, u.avatar_url,
               COUNT(m.id) FILTER (WHERE m.is_read = false AND m.receiver_id = $1) AS unread_count
        FROM users u
        LEFT JOIN messages m ON m.sender_id = u.id AND m.receiver_id = $1
        WHERE u.id != $1 AND u.is_active = true
-       GROUP BY u.id, u.name, u.role, u.is_active
+       GROUP BY u.id, u.name, u.role, u.is_active, u.avatar_url
        ORDER BY unread_count DESC, u.name ASC`,
       [currentUserId]
     );
@@ -283,7 +285,7 @@ router.get('/conversations', async (req, res) => {
          GROUP BY CASE WHEN sender_id = $1 THEN receiver_id ELSE sender_id END
        )
        SELECT
-         u.id AS user_id, u.name AS user_name, u.role AS user_role,
+         u.id AS user_id, u.name AS user_name, u.role AS user_role, u.avatar_url,
          m.text AS last_message,
          m.created_at AS last_message_time,
          (SELECT COUNT(*) FROM messages

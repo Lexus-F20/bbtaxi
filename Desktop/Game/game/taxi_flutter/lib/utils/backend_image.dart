@@ -1,14 +1,12 @@
+import 'dart:collection';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../services/api_service.dart';
-import '../services/media_cache.dart';
 
 /// Загружает изображение через http.get() и показывает через Image.memory().
-/// Обходит CachedNetworkImage/flutter_cache_manager которые зависают
-/// при несоответствии Content-Length (Railway gzip).
-/// Кеш в памяти на сессию — повторные показы без сети.
+/// LRU in-memory кэш на 80 изображений — старые автоматически вытесняются.
 class BackendImage extends StatefulWidget {
   final String url;
   final double? width;
@@ -27,8 +25,25 @@ class BackendImage extends StatefulWidget {
     this.errorWidget,
   });
 
-  // Простой in-memory кеш: URL → байты
-  static final Map<String, Uint8List> _cache = {};
+  // LRU кэш: максимум 80 изображений
+  static final LinkedHashMap<String, Uint8List> _cache = LinkedHashMap();
+  static const int _maxEntries = 80;
+
+  static Uint8List? _get(String url) {
+    if (!_cache.containsKey(url)) return null;
+    // Перемещаем в конец — recently used
+    final bytes = _cache.remove(url)!;
+    _cache[url] = bytes;
+    return bytes;
+  }
+
+  static void _set(String url, Uint8List bytes) {
+    _cache.remove(url);
+    if (_cache.length >= _maxEntries) {
+      _cache.remove(_cache.keys.first); // evict oldest
+    }
+    _cache[url] = bytes;
+  }
 
   static void evict(String url) => _cache.remove(normalizeMediaUrl(url));
 
@@ -47,40 +62,21 @@ class _BackendImageState extends State<BackendImage> {
 
   Future<Uint8List> _load() async {
     final url = normalizeMediaUrl(widget.url);
-    debugPrint('[BackendImage] Загрузка: $url');
 
-    // In-memory кеш — мгновенно, без I/O
-    if (BackendImage._cache.containsKey(url)) {
-      debugPrint('[BackendImage] Найдено в кеше: $url');
-      return BackendImage._cache[url]!;
+    final cached = BackendImage._get(url);
+    if (cached != null) return cached;
+
+    final response = await http
+        .get(Uri.parse(url))
+        .timeout(const Duration(seconds: 30));
+
+    if (response.statusCode != 200) {
+      throw Exception('HTTP ${response.statusCode}');
     }
 
-    // Прямой HTTP-запрос. Дисковый кэш (flutter_cache_manager) намеренно
-    // обходим: его SQLite-база может зависнуть если в ней остались
-    // сломанные записи от предыдущих сбоев соединения.
-    try {
-      final response =
-          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 30));
-      debugPrint('[BackendImage] HTTP ${response.statusCode} для $url');
-      if (response.statusCode != 200) {
-        debugPrint('[BackendImage] Тело ответа: ${response.body}');
-        throw Exception('HTTP ${response.statusCode}');
-      }
-      final bytes = response.bodyBytes;
-      BackendImage._cache[url] = bytes;
-      debugPrint('[BackendImage] Загружено ${bytes.length} байт');
-      return bytes;
-    } catch (e) {
-      debugPrint('[BackendImage] Ошибка загрузки: $e');
-      rethrow;
-    }
-  }
-
-  String _extFromUrl(String url) {
-    final clean = url.split('?').first;
-    final dot = clean.lastIndexOf('.');
-    if (dot == -1 || dot == clean.length - 1) return 'jpg';
-    return clean.substring(dot + 1).toLowerCase();
+    final bytes = response.bodyBytes;
+    BackendImage._set(url, bytes);
+    return bytes;
   }
 
   @override

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import 'package:video_compress/video_compress.dart';
 
 import 'api_service.dart';
 
@@ -52,35 +53,98 @@ class MediaService {
     }
   }
 
+  /// Сжать видео перед загрузкой (720p, H.264, нативный Android MediaCodec).
+  /// При ошибке возвращает оригинал.
+  static Future<XFile> _compressVideo(XFile input) async {
+    try {
+      debugPrint('[MediaService] Сжатие видео: ${input.path}');
+      final info = await VideoCompress.compressVideo(
+        input.path,
+        quality: VideoQuality.MediumQuality, // 720p
+        deleteOrigin: false,
+        includeAudio: true,
+        frameRate: 30,
+      );
+      if (info?.file != null) {
+        debugPrint('[MediaService] Сжато: ${info!.file!.path}');
+        return XFile(info.file!.path);
+      }
+    } catch (e) {
+      debugPrint('[MediaService] Ошибка сжатия видео: $e');
+    }
+    return input; // fallback — оригинал
+  }
+
   /// Загрузить файл через бэкенд в Firebase Storage и вернуть URL.
-  static Future<String> uploadFile(XFile file, String folder) async {
+  /// [onProgress] вызывается с (отправлено, всего) байт при каждом чанке.
+  static Future<String> uploadFile(
+    XFile file,
+    String folder, {
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    // Сжимаем видео перед загрузкой
+    final fileToUpload = isVideo(file.path) ? await _compressVideo(file) : file;
+
     final uri = Uri.parse('$kBaseUrl/upload');
     final token = ApiService().token;
 
-    final request = http.MultipartRequest('POST', uri);
+    final multipart = http.MultipartRequest('POST', uri);
     if (token != null) {
-      request.headers['Authorization'] = 'Bearer $token';
+      multipart.headers['Authorization'] = 'Bearer $token';
     }
-    request.fields['folder'] = folder;
-    request.files.add(
-      await http.MultipartFile.fromPath('file', file.path, filename: file.name),
+    multipart.fields['folder'] = folder;
+    multipart.files.add(
+      await http.MultipartFile.fromPath('file', fileToUpload.path, filename: fileToUpload.name),
     );
 
-    final streamed = await request.send().timeout(const Duration(minutes: 3));
-    final body = await streamed.stream
-        .bytesToString()
-        .timeout(const Duration(seconds: 30));
-
-    if (streamed.statusCode != 200) {
-      throw Exception('Ошибка загрузки (${streamed.statusCode}): $body');
+    if (onProgress == null) {
+      // Без отслеживания прогресса — стандартный путь
+      final streamed = await multipart.send().timeout(const Duration(minutes: 3));
+      final body = await streamed.stream.bytesToString().timeout(const Duration(seconds: 30));
+      if (streamed.statusCode != 200) {
+        throw Exception('Ошибка загрузки (${streamed.statusCode}): $body');
+      }
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final url = json['url'] as String?;
+      if (url == null || url.isEmpty) throw Exception('Сервер вернул пустой URL');
+      return url;
     }
 
-    final json = jsonDecode(body) as Map<String, dynamic>;
-    final url = json['url'] as String?;
-    if (url == null || url.isEmpty) {
-      throw Exception('Сервер вернул пустой URL');
+    // С отслеживанием прогресса: оборачиваем тело в считающий поток
+    final total = multipart.contentLength;
+    final bodyStream = multipart.finalize(); // finalize() устанавливает Content-Type с boundary в multipart.headers
+    final headers = Map<String, String>.from(multipart.headers); // копируем ПОСЛЕ finalize
+
+    final req = http.StreamedRequest('POST', uri)
+      ..headers.addAll(headers)
+      ..contentLength = total;
+
+    int sent = 0;
+    bodyStream.listen(
+      (chunk) {
+        req.sink.add(chunk);
+        sent += chunk.length;
+        onProgress(sent, total);
+      },
+      onDone: () => req.sink.close(),
+      onError: (Object e) => req.sink.addError(e),
+      cancelOnError: true,
+    );
+
+    final client = http.Client();
+    try {
+      final response = await client.send(req).timeout(const Duration(minutes: 3));
+      final body = await response.stream.bytesToString().timeout(const Duration(seconds: 30));
+      if (response.statusCode != 200) {
+        throw Exception('Ошибка загрузки (${response.statusCode}): $body');
+      }
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final url = json['url'] as String?;
+      if (url == null || url.isEmpty) throw Exception('Сервер вернул пустой URL');
+      return url;
+    } finally {
+      client.close();
     }
-    return url;
   }
 
   /// Загрузить список файлов и вернуть массив URL.

@@ -1489,7 +1489,7 @@ class _MapScreenState extends State<MapScreen> {
         children: [
           GoogleMap(
             initialCameraPosition: _defaultPosition,
-            mapType: MapType.satellite,
+            mapType: MapType.hybrid,
             markers: googleMarkers,
             polylines: googlePolylines,
             onMapCreated: (controller) {

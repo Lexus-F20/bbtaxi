@@ -77,11 +77,12 @@ class ApiService {
 
   /// Обновление профиля текущего пользователя
   Future<UserModel> updateProfile(
-      {String? name, String? login, String? password}) async {
+      {String? name, String? login, String? password, String? avatarUrl}) async {
     final body = <String, dynamic>{};
     if (name != null) body['name'] = name;
     if (login != null) body['login'] = login;
     if (password != null) body['password'] = password;
+    if (avatarUrl != null) body['avatar_url'] = avatarUrl;
 
     final response = await http.put(
       Uri.parse('$kBaseUrl/auth/profile'),
@@ -91,6 +92,19 @@ class ApiService {
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode == 200) return UserModel.fromJson(data['user']);
     throw ApiException(data['error'] ?? 'Ошибка обновления профиля');
+  }
+
+  /// Обновить аватар беседы (только admin)
+  Future<void> updateConversationAvatar(int conversationId, String? avatarUrl) async {
+    final response = await http.put(
+      Uri.parse('$kBaseUrl/conversations/$conversationId'),
+      headers: _headers,
+      body: jsonEncode({'avatar_url': avatarUrl}),
+    );
+    if (response.statusCode != 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      throw ApiException(data['error'] ?? 'Ошибка обновления аватара');
+    }
   }
 
   Future<void> updateFcmToken(String fcmToken) async {

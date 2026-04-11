@@ -124,6 +124,8 @@ async function initDatabase() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS rating INTEGER DEFAULT 0;
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS conversation_id INTEGER REFERENCES conversations(id);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS avatar_url TEXT;
     `);
 
     // Создать администратора по умолчанию если нет пользователей

@@ -288,6 +288,7 @@ class ChatMessage {
   final int senderId;
   final String? senderName;
   final String? senderRole;
+  final String? senderAvatarUrl;
   final int? receiverId;
   final String? receiverName;
   final String text;
@@ -303,6 +304,7 @@ class ChatMessage {
     required this.senderId,
     this.senderName,
     this.senderRole,
+    this.senderAvatarUrl,
     this.receiverId,
     this.receiverName,
     required this.text,
@@ -320,6 +322,7 @@ class ChatMessage {
       senderId: json['sender_id'] as int,
       senderName: json['sender_name'] as String?,
       senderRole: json['sender_role'] as String?,
+      senderAvatarUrl: json['sender_avatar_url'] as String?,
       receiverId: json['receiver_id'] as int?,
       receiverName: json['receiver_name'] as String?,
       text: json['text'] as String? ?? '',
@@ -341,6 +344,7 @@ class ConversationPreview {
   final int userId;
   final String userName;
   final String userRole;
+  final String? avatarUrl;
   final String lastMessage;
   final DateTime lastMessageTime;
   final int unreadCount;
@@ -349,6 +353,7 @@ class ConversationPreview {
     required this.userId,
     required this.userName,
     required this.userRole,
+    this.avatarUrl,
     required this.lastMessage,
     required this.lastMessageTime,
     required this.unreadCount,
@@ -359,9 +364,73 @@ class ConversationPreview {
       userId: json['user_id'] as int,
       userName: json['user_name'] as String? ?? 'Пользователь',
       userRole: json['user_role'] as String? ?? 'user',
+      avatarUrl: json['avatar_url'] as String?,
       lastMessage: json['last_message'] as String? ?? '',
       lastMessageTime: DateTime.parse(json['last_message_time'] as String),
       unreadCount: int.parse(json['unread_count'].toString()),
+    );
+  }
+}
+
+// ========== МОДЕЛЬ ГРУППОВОЙ БЕСЕДЫ ==========
+
+class GroupConversation {
+  final int id;
+  final String name;
+  final int createdBy;
+  final DateTime createdAt;
+  final String? lastMessage;
+  final DateTime? lastMessageTime;
+  final int unreadCount;
+  final int memberCount;
+  final String? avatarUrl;
+
+  const GroupConversation({
+    required this.id,
+    required this.name,
+    required this.createdBy,
+    required this.createdAt,
+    this.lastMessage,
+    this.lastMessageTime,
+    required this.unreadCount,
+    required this.memberCount,
+    this.avatarUrl,
+  });
+
+  factory GroupConversation.fromJson(Map<String, dynamic> json) {
+    return GroupConversation(
+      id: json['id'] as int,
+      name: json['name'] as String? ?? 'Беседа',
+      createdBy: json['created_by'] as int? ?? 0,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      lastMessage: json['last_message'] as String?,
+      lastMessageTime: json['last_message_time'] != null
+          ? DateTime.parse(json['last_message_time'] as String)
+          : null,
+      unreadCount: int.parse((json['unread_count'] ?? 0).toString()),
+      memberCount: int.parse((json['member_count'] ?? 0).toString()),
+      avatarUrl: json['avatar_url'] as String?,
+    );
+  }
+
+  GroupConversation copyWith({
+    String? name,
+    String? avatarUrl,
+    int? memberCount,
+    String? lastMessage,
+    DateTime? lastMessageTime,
+    int? unreadCount,
+  }) {
+    return GroupConversation(
+      id: id,
+      name: name ?? this.name,
+      createdBy: createdBy,
+      createdAt: createdAt,
+      lastMessage: lastMessage ?? this.lastMessage,
+      lastMessageTime: lastMessageTime ?? this.lastMessageTime,
+      unreadCount: unreadCount ?? this.unreadCount,
+      memberCount: memberCount ?? this.memberCount,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
     );
   }
 }

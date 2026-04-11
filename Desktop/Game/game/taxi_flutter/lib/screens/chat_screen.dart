@@ -462,7 +462,7 @@ class _GlobalChatTabState extends State<_GlobalChatTab>
                         context,
                         MaterialPageRoute(
                           builder: (_) => DirectChatScreen(
-                            user: UserModel(id: u.id, name: u.name, login: '', role: u.role),
+                            user: UserModel(id: u.id, name: u.name, login: '', role: u.role, avatarUrl: u.avatarUrl),
                           ),
                         ),
                       );
@@ -591,6 +591,7 @@ class _DirectChatTabState extends State<_DirectChatTab>
                       name: conv.userName,
                       login: '',
                       role: conv.userRole,
+                      avatarUrl: conv.avatarUrl,
                     ),
                   ),
                 ),
@@ -671,25 +672,42 @@ class _ConversationTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
           children: [
-            // Градиентный аватар
+            // Аватар пользователя
             Container(
               width: 50,
               height: 50,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: LinearGradient(
+                gradient: conv.avatarUrl == null ? LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [roleColor.withValues(alpha: 0.8), roleColor.withValues(alpha: 0.35)],
-                ),
+                ) : null,
                 boxShadow: [BoxShadow(color: roleColor.withValues(alpha: 0.3), blurRadius: 6, offset: const Offset(0, 2))],
               ),
-              child: Center(
-                child: Text(
-                  conv.userName.isNotEmpty ? conv.userName[0].toUpperCase() : '?',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20),
-                ),
-              ),
+              child: conv.avatarUrl != null
+                  ? ClipOval(
+                      child: BackendImage(
+                        url: conv.avatarUrl!,
+                        width: 50,
+                        height: 50,
+                        fit: BoxFit.cover,
+                        placeholder: Center(child: Text(
+                          conv.userName.isNotEmpty ? conv.userName[0].toUpperCase() : '?',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20),
+                        )),
+                        errorWidget: Center(child: Text(
+                          conv.userName.isNotEmpty ? conv.userName[0].toUpperCase() : '?',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20),
+                        )),
+                      ),
+                    )
+                  : Center(
+                      child: Text(
+                        conv.userName.isNotEmpty ? conv.userName[0].toUpperCase() : '?',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20),
+                      ),
+                    ),
             ),
             const SizedBox(width: 14),
             // Текст
@@ -935,17 +953,43 @@ class _DirectChatScreenState extends State<DirectChatScreen> {
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Text(widget.user.name),
-                Text(
-                  widget.user.role == 'admin'
-                      ? 'Администратор'
-                      : widget.user.role == 'driver'
-                          ? 'Пилот'
-                          : 'Пользователь',
-                  style: const TextStyle(fontSize: 12, color: Colors.white70),
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: (widget.user.role == 'admin' ? Colors.redAccent : Colors.lightBlueAccent).withValues(alpha: 0.25),
+                  child: widget.user.avatarUrl != null
+                      ? ClipOval(
+                          child: BackendImage(
+                            url: widget.user.avatarUrl!,
+                            width: 36,
+                            height: 36,
+                            fit: BoxFit.cover,
+                            placeholder: Text(widget.user.name.isNotEmpty ? widget.user.name[0].toUpperCase() : '?',
+                              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                            errorWidget: Text(widget.user.name.isNotEmpty ? widget.user.name[0].toUpperCase() : '?',
+                              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                          ),
+                        )
+                      : Text(
+                          widget.user.name.isNotEmpty ? widget.user.name[0].toUpperCase() : '?',
+                          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                        ),
+                ),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(widget.user.name),
+                    Text(
+                      widget.user.role == 'admin'
+                          ? 'Администратор'
+                          : widget.user.role == 'driver'
+                              ? 'Пилот'
+                              : 'Пользователь',
+                      style: const TextStyle(fontSize: 12, color: Colors.white70),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1210,12 +1254,29 @@ class _MessageBubble extends StatelessWidget {
               child: CircleAvatar(
                 radius: 18,
                 backgroundColor: _roleColor(message.senderRole).withValues(alpha: 0.25),
-                child: Text(
-                  (message.senderName?.isNotEmpty == true)
-                      ? message.senderName![0].toUpperCase()
-                      : '?',
-                  style: TextStyle(color: _roleColor(message.senderRole), fontSize: 14, fontWeight: FontWeight.bold),
-                ),
+                child: message.senderAvatarUrl != null
+                    ? ClipOval(
+                        child: BackendImage(
+                          url: message.senderAvatarUrl!,
+                          width: 36,
+                          height: 36,
+                          fit: BoxFit.cover,
+                          placeholder: Text(
+                            (message.senderName?.isNotEmpty == true) ? message.senderName![0].toUpperCase() : '?',
+                            style: TextStyle(color: _roleColor(message.senderRole), fontSize: 14, fontWeight: FontWeight.bold),
+                          ),
+                          errorWidget: Text(
+                            (message.senderName?.isNotEmpty == true) ? message.senderName![0].toUpperCase() : '?',
+                            style: TextStyle(color: _roleColor(message.senderRole), fontSize: 14, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      )
+                    : Text(
+                        (message.senderName?.isNotEmpty == true)
+                            ? message.senderName![0].toUpperCase()
+                            : '?',
+                        style: TextStyle(color: _roleColor(message.senderRole), fontSize: 14, fontWeight: FontWeight.bold),
+                      ),
               ),
             ),
             const SizedBox(width: 8),
@@ -1477,25 +1538,42 @@ class _GroupConversationTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
           children: [
-            // Градиентный аватар группы
+            // Аватар группы
             Container(
               width: 50,
               height: 50,
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: LinearGradient(
+                gradient: conv.avatarUrl == null ? const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [Color(0xFF3949AB), Color(0xFF1A237E)],
-                ),
-                boxShadow: [BoxShadow(color: Color(0x441A237E), blurRadius: 6, offset: Offset(0, 2))],
+                ) : null,
+                boxShadow: const [BoxShadow(color: Color(0x441A237E), blurRadius: 6, offset: Offset(0, 2))],
               ),
-              child: Center(
-                child: Text(
-                  conv.name.isNotEmpty ? conv.name[0].toUpperCase() : 'Б',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20),
-                ),
-              ),
+              child: conv.avatarUrl != null
+                  ? ClipOval(
+                      child: BackendImage(
+                        url: conv.avatarUrl!,
+                        width: 50,
+                        height: 50,
+                        fit: BoxFit.cover,
+                        placeholder: Center(child: Text(
+                          conv.name.isNotEmpty ? conv.name[0].toUpperCase() : 'Б',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20),
+                        )),
+                        errorWidget: Center(child: Text(
+                          conv.name.isNotEmpty ? conv.name[0].toUpperCase() : 'Б',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20),
+                        )),
+                      ),
+                    )
+                  : Center(
+                      child: Text(
+                        conv.name.isNotEmpty ? conv.name[0].toUpperCase() : 'Б',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20),
+                      ),
+                    ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -2122,6 +2200,24 @@ class _GroupInfoScreenState extends State<GroupInfoScreen>
     }
   }
 
+  Future<void> _pickGroupAvatar() async {
+    final files = await MediaService.pickMedia(ImageSource.gallery);
+    if (files.isEmpty || !mounted) return;
+    setState(() => _conv = _conv.copyWith(avatarUrl: '__loading__'));
+    try {
+      final url = await MediaService.uploadFile(files.first, 'avatars');
+      await ApiService().updateConversationAvatar(_conv.id, url);
+      setState(() => _conv = _conv.copyWith(avatarUrl: url));
+    } catch (e) {
+      setState(() => _conv = _conv.copyWith(avatarUrl: null));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка загрузки фото: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   Future<void> _renameConversation() async {
     final ctrl = TextEditingController(text: _conv.name);
     final newName = await showDialog<String>(
@@ -2143,16 +2239,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen>
     if (newName == null || newName.isEmpty) return;
     try {
       await ApiService().renameConversation(_conv.id, newName);
-      setState(() => _conv = GroupConversation(
-        id: _conv.id,
-        name: newName,
-        createdBy: _conv.createdBy,
-        createdAt: _conv.createdAt,
-        lastMessage: _conv.lastMessage,
-        lastMessageTime: _conv.lastMessageTime,
-        unreadCount: _conv.unreadCount,
-        memberCount: _conv.memberCount,
-      ));
+      setState(() => _conv = _conv.copyWith(name: newName));
       widget.onRenamed?.call(newName);
     } catch (e) {
       if (mounted) {
@@ -2382,22 +2469,58 @@ class _GroupInfoScreenState extends State<GroupInfoScreen>
             padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
             child: Column(
               children: [
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFF3949AB), Color(0xFF1A237E)],
-                    ),
-                  ),
-                  child: Center(
-                    child: Text(
-                      _conv.name.isNotEmpty ? _conv.name[0].toUpperCase() : 'Б',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 32),
-                    ),
+                GestureDetector(
+                  onTap: widget.isAdmin ? _pickGroupAvatar : null,
+                  child: Stack(
+                    alignment: Alignment.bottomRight,
+                    children: [
+                      Container(
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: (_conv.avatarUrl == null || _conv.avatarUrl == '__loading__') ? const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFF3949AB), Color(0xFF1A237E)],
+                          ) : null,
+                        ),
+                        child: _conv.avatarUrl == '__loading__'
+                            ? const Center(child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                            : _conv.avatarUrl != null
+                                ? ClipOval(
+                                    child: BackendImage(
+                                      url: _conv.avatarUrl!,
+                                      width: 80,
+                                      height: 80,
+                                      fit: BoxFit.cover,
+                                      placeholder: Center(child: Text(
+                                        _conv.name.isNotEmpty ? _conv.name[0].toUpperCase() : 'Б',
+                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 32),
+                                      )),
+                                      errorWidget: Center(child: Text(
+                                        _conv.name.isNotEmpty ? _conv.name[0].toUpperCase() : 'Б',
+                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 32),
+                                      )),
+                                    ),
+                                  )
+                                : Center(
+                                    child: Text(
+                                      _conv.name.isNotEmpty ? _conv.name[0].toUpperCase() : 'Б',
+                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 32),
+                                    ),
+                                  ),
+                      ),
+                      if (widget.isAdmin)
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF1565C0),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.camera_alt, color: Colors.white, size: 14),
+                        ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 12),
