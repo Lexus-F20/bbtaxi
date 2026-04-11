@@ -7,7 +7,7 @@ import 'api_service.dart';
 
 /// Текущая версия приложения.
 /// Увеличивайте при каждой новой сборке APK и задавайте такую же в Railway: APP_VERSION=x.x.x
-const String kCurrentVersion = '1.0.3';
+const String kCurrentVersion = '1.0.13';
 
 class UpdateService {
   static const _channel = MethodChannel('app_updater');

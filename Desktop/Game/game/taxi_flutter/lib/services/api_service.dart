@@ -447,6 +447,139 @@ class ApiService {
     throw ApiException(data['error'] ?? 'Ошибка получения переписок');
   }
 
+  // ========== ГРУППОВЫЕ БЕСЕДЫ ==========
+
+  Future<List<GroupConversation>> getGroupConversations() async {
+    final response = await http.get(
+      Uri.parse('$kBaseUrl/conversations'),
+      headers: _headers,
+    );
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode == 200) {
+      return (data['conversations'] as List)
+          .map((c) => GroupConversation.fromJson(c))
+          .toList();
+    }
+    throw ApiException(data['error'] ?? 'Ошибка получения бесед');
+  }
+
+  Future<GroupConversation> createGroupConversation(
+      String name, List<int> memberIds) async {
+    final response = await http.post(
+      Uri.parse('$kBaseUrl/conversations'),
+      headers: _headers,
+      body: jsonEncode({'name': name, 'member_ids': memberIds}),
+    );
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode == 201) {
+      return GroupConversation.fromJson(data['conversation']);
+    }
+    throw ApiException(data['error'] ?? 'Ошибка создания беседы');
+  }
+
+  Future<List<ChatMessage>> getConversationMessages(int conversationId,
+      {int limit = 50, int offset = 0}) async {
+    final uri = Uri.parse('$kBaseUrl/conversations/$conversationId/messages')
+        .replace(queryParameters: {'limit': '$limit', 'offset': '$offset'});
+    final response = await http.get(uri, headers: _headers);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode == 200) {
+      return (data['messages'] as List)
+          .map((m) => ChatMessage.fromJson(m))
+          .toList();
+    }
+    throw ApiException(data['error'] ?? 'Ошибка получения сообщений беседы');
+  }
+
+  Future<ChatMessage> sendConversationMessage(int conversationId, String text,
+      {String? mediaUrl}) async {
+    final body = <String, dynamic>{'text': text};
+    if (mediaUrl != null) body['media_url'] = mediaUrl;
+    final response = await http.post(
+      Uri.parse('$kBaseUrl/conversations/$conversationId/messages'),
+      headers: _headers,
+      body: jsonEncode(body),
+    );
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode == 201) return ChatMessage.fromJson(data['message']);
+    throw ApiException(data['error'] ?? 'Ошибка отправки сообщения');
+  }
+
+  Future<List<Map<String, dynamic>>> getConversationMembers(
+      int conversationId) async {
+    final response = await http.get(
+      Uri.parse('$kBaseUrl/conversations/$conversationId/members'),
+      headers: _headers,
+    );
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(data['members']);
+    }
+    throw ApiException(data['error'] ?? 'Ошибка получения участников');
+  }
+
+  Future<void> addConversationMember(int conversationId, int userId) async {
+    final response = await http.post(
+      Uri.parse('$kBaseUrl/conversations/$conversationId/members'),
+      headers: _headers,
+      body: jsonEncode({'user_id': userId}),
+    );
+    if (response.statusCode != 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      throw ApiException(data['error'] ?? 'Ошибка добавления участника');
+    }
+  }
+
+  Future<void> removeConversationMember(
+      int conversationId, int userId) async {
+    final response = await http.delete(
+      Uri.parse('$kBaseUrl/conversations/$conversationId/members/$userId'),
+      headers: _headers,
+    );
+    if (response.statusCode != 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      throw ApiException(data['error'] ?? 'Ошибка удаления участника');
+    }
+  }
+
+  Future<void> renameConversation(int conversationId, String name) async {
+    final response = await http.put(
+      Uri.parse('$kBaseUrl/conversations/$conversationId'),
+      headers: _headers,
+      body: jsonEncode({'name': name}),
+    );
+    if (response.statusCode != 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      throw ApiException(data['error'] ?? 'Ошибка переименования беседы');
+    }
+  }
+
+  Future<void> changeMemberRole(int conversationId, int userId, String role) async {
+    final response = await http.patch(
+      Uri.parse('$kBaseUrl/conversations/$conversationId/members/$userId'),
+      headers: _headers,
+      body: jsonEncode({'role': role}),
+    );
+    if (response.statusCode != 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      throw ApiException(data['error'] ?? 'Ошибка смены роли');
+    }
+  }
+
+  Future<List<ChatMessage>> getConversationMedia(int conversationId) async {
+    final response = await http.get(
+      Uri.parse('$kBaseUrl/conversations/$conversationId/messages?media_only=true&limit=100'),
+      headers: _headers,
+    );
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode == 200) {
+      return (data['messages'] as List)
+          .map((m) => ChatMessage.fromJson(m as Map<String, dynamic>))
+          .toList();
+    }
+    throw ApiException(data['error'] ?? 'Ошибка получения медиа');
+  }
+
   // ========== АДМИНИСТРАТОР ==========
 
   Future<List<UserModel>> getUsers({String? role}) async {
