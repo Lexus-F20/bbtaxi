@@ -21,7 +21,6 @@ const usersRoutes = require('./routes/users');
 const userRoutesRoutes = require('./routes/user_routes');
 const uploadRoutes = require('./routes/upload');
 const conversationsRoutes = require('./routes/conversations');
-const conversationsRoutes = require('./routes/conversations');
 
 // Импортируем middleware авторизации
 const { authenticateToken } = require('./middleware/auth');
@@ -81,7 +80,6 @@ app.use('/ratings', authenticateToken, ratingsRoutes);
 app.use('/users', authenticateToken, usersRoutes);
 app.use('/routes', authenticateToken, userRoutesRoutes);
 app.use('/upload', authenticateToken, uploadRoutes);
-app.use('/conversations', authenticateToken, conversationsRoutes);
 app.use('/conversations', authenticateToken, conversationsRoutes);
 
 // Проверка работоспособности сервера
