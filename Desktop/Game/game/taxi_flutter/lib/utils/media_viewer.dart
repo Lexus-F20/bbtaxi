@@ -1,5 +1,6 @@
-import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:audioplayers/audioplayers.dart';
 
@@ -9,7 +10,6 @@ import '../services/media_service.dart';
 import 'backend_image.dart';
 
 /// Открыть фото или видео на весь экран.
-/// Фото и видео кешируются — при повторном открытии загружаются с диска.
 void openMediaViewer(BuildContext context, String url) {
   final safeUrl = normalizeMediaUrl(url);
   Navigator.push(
@@ -19,12 +19,13 @@ void openMediaViewer(BuildContext context, String url) {
           ? _VideoPlayerScreen(videoUrl: safeUrl)
           : MediaService.isAudio(safeUrl)
               ? _AudioPlayerScreen(audioUrl: safeUrl)
-          : _FullScreenImageScreen(imageUrl: safeUrl),
+              : _FullScreenImageScreen(imageUrl: safeUrl),
+      fullscreenDialog: true,
     ),
   );
 }
 
-/// Устаревший алиас для совместимости с кодом, который вызывает openImageViewer.
+/// Устаревший алиас
 void openImageViewer(BuildContext context, String url) =>
     openMediaViewer(context, url);
 
@@ -68,7 +69,7 @@ class _FullScreenImageScreen extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────
-// ВОСПРОИЗВЕДЕНИЕ ВИДЕО
+// ВОСПРОИЗВЕДЕНИЕ ВИДЕО (улучшенный плеер)
 // ─────────────────────────────────────────────
 
 class _VideoPlayerScreen extends StatefulWidget {
@@ -79,162 +80,468 @@ class _VideoPlayerScreen extends StatefulWidget {
   State<_VideoPlayerScreen> createState() => _VideoPlayerScreenState();
 }
 
-class _VideoPlayerScreenState extends State<_VideoPlayerScreen> {
-  VideoPlayerController? _controller;
+class _VideoPlayerScreenState extends State<_VideoPlayerScreen>
+    with SingleTickerProviderStateMixin {
+  VideoPlayerController? _ctrl;
   bool _isLoading = true;
   String? _error;
-  double _downloadPercent = 0;
+
+  // Контролы
+  bool _showControls = true;
+  Timer? _hideTimer;
+  bool _isDragging = false;
+
+  // Анимация появления/скрытия контролов
+  late AnimationController _fadeCtrl;
+  late Animation<double> _fadeAnim;
+
+  // Двойной тап (перемотка)
+  int _seekSide = 0; // -1 = назад, 0 = нет, 1 = вперёд
+  String _seekLabel = '';
+  Timer? _seekLabelTimer;
 
   @override
   void initState() {
     super.initState();
+    _fadeCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+      value: 1.0,
+    );
+    _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeInOut);
+
+    // Уходим в landscape
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+      DeviceOrientation.portraitUp,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
     _initPlayer();
+    _scheduleHide();
   }
 
   Future<void> _initPlayer() async {
     try {
-      // Если видео уже в кеше — играем с диска (мгновенно)
-      // Иначе — играем из сети и качаем в фон для следующего раза
       final cached = await MediaCache.getCachedFile(widget.videoUrl);
       if (cached != null) {
-        _controller = VideoPlayerController.file(cached);
+        _ctrl = VideoPlayerController.file(cached);
       } else {
-        _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
-        // Фоновая загрузка в кеш пока пользователь смотрит
+        _ctrl = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
         MediaCache.getFile(widget.videoUrl).ignore();
       }
 
-      await _controller!.initialize().timeout(
-        const Duration(seconds: 20),
-        onTimeout: () => throw Exception('Таймаут инициализации видео (20с)'),
+      await _ctrl!.initialize().timeout(
+        const Duration(seconds: 25),
+        onTimeout: () => throw Exception('Таймаут загрузки видео (25с)'),
       );
-      _controller!.addListener(() {
-        if (mounted) setState(() {});
-      });
-      await _controller!.play();
+
+      _ctrl!.addListener(_onVideoListener);
+      await _ctrl!.play();
       if (mounted) setState(() => _isLoading = false);
     } catch (e) {
       if (mounted) setState(() { _isLoading = false; _error = e.toString(); });
     }
   }
 
+  void _onVideoListener() {
+    if (!mounted) return;
+    setState(() {});
+    // Когда видео закончилось — показываем контролы
+    if (_ctrl!.value.position >= _ctrl!.value.duration &&
+        _ctrl!.value.duration > Duration.zero) {
+      _showControlsNow();
+    }
+  }
+
   @override
   void dispose() {
-    _controller?.dispose();
+    _hideTimer?.cancel();
+    _seekLabelTimer?.cancel();
+    _fadeCtrl.dispose();
+    _ctrl?.removeListener(_onVideoListener);
+    _ctrl?.dispose();
+    // Восстанавливаем ориентацию и UI
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
+
+  // ── Управление видимостью контролов ──
+
+  void _scheduleHide() {
+    _hideTimer?.cancel();
+    _hideTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted && (_ctrl?.value.isPlaying ?? false) && !_isDragging) {
+        _fadeCtrl.reverse();
+        setState(() => _showControls = false);
+      }
+    });
+  }
+
+  void _showControlsNow() {
+    _hideTimer?.cancel();
+    _fadeCtrl.forward();
+    setState(() => _showControls = true);
+    if (_ctrl?.value.isPlaying ?? false) _scheduleHide();
+  }
+
+  void _onTapScreen() {
+    if (_showControls) {
+      _hideTimer?.cancel();
+      _fadeCtrl.reverse();
+      setState(() => _showControls = false);
+    } else {
+      _showControlsNow();
+    }
+  }
+
+  // ── Перемотка ──
+
+  void _seek(int seconds) {
+    if (_ctrl == null) return;
+    final pos = _ctrl!.value.position + Duration(seconds: seconds);
+    final dur = _ctrl!.value.duration;
+    final clamped = pos < Duration.zero ? Duration.zero : (pos > dur ? dur : pos);
+    _ctrl!.seekTo(clamped);
+    // Показываем метку
+    _seekLabelTimer?.cancel();
+    setState(() {
+      _seekSide = seconds > 0 ? 1 : -1;
+      _seekLabel = seconds > 0 ? '+$seconds с' : '$seconds с';
+    });
+    _seekLabelTimer = Timer(const Duration(milliseconds: 700), () {
+      if (mounted) setState(() => _seekSide = 0);
+    });
+    _showControlsNow();
+  }
+
+  void _togglePlayPause() {
+    if (_ctrl == null) return;
+    if (_ctrl!.value.isPlaying) {
+      _ctrl!.pause();
+      _showControlsNow();
+    } else {
+      _ctrl!.play();
+      _scheduleHide();
+    }
+    setState(() {});
+  }
+
+  // ── Форматирование времени ──
+
+  String _fmt(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return h > 0 ? '$h:$m:$s' : '$m:$s';
+  }
+
+  // ── Сборка UI ──
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        elevation: 0,
-      ),
       body: _isLoading
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(
-                    color: Colors.white,
-                    value: _downloadPercent > 0 ? _downloadPercent : null,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _downloadPercent > 0
-                        ? 'Загрузка ${(_downloadPercent * 100).toInt()}%...'
-                        : 'Загрузка видео...',
-                    style: const TextStyle(color: Colors.white54),
-                  ),
-                ],
-              ),
-            )
+          ? const Center(child: CircularProgressIndicator(color: Colors.white))
           : _error != null
-              ? Center(
+              ? _buildError()
+              : _buildPlayer(),
+    );
+  }
+
+  Widget _buildError() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.redAccent, size: 56),
+            const SizedBox(height: 12),
+            const Text('Не удалось загрузить видео',
+                style: TextStyle(color: Colors.white, fontSize: 16)),
+            const SizedBox(height: 8),
+            Text(_error!,
+                style: const TextStyle(color: Colors.white38, fontSize: 12),
+                textAlign: TextAlign.center),
+            const SizedBox(height: 20),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(foregroundColor: Colors.white54,
+                  side: const BorderSide(color: Colors.white24)),
+              icon: const Icon(Icons.arrow_back),
+              label: const Text('Назад'),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlayer() {
+    final ctrl = _ctrl!;
+    final position = ctrl.value.position;
+    final duration = ctrl.value.duration;
+    final isPlaying = ctrl.value.isPlaying;
+    final maxMs = duration.inMilliseconds > 0 ? duration.inMilliseconds : 1;
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // ── Само видео ──
+        Center(
+          child: AspectRatio(
+            aspectRatio: ctrl.value.aspectRatio,
+            child: VideoPlayer(ctrl),
+          ),
+        ),
+
+        // ── Зона двойного тапа (левая) — -10с ──
+        Positioned(
+          left: 0, top: 0, bottom: 0,
+          width: MediaQuery.of(context).size.width * 0.35,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _onTapScreen,
+            onDoubleTap: () => _seek(-10),
+            child: const SizedBox.expand(),
+          ),
+        ),
+
+        // ── Зона двойного тапа (правая) — +10с ──
+        Positioned(
+          right: 0, top: 0, bottom: 0,
+          width: MediaQuery.of(context).size.width * 0.35,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _onTapScreen,
+            onDoubleTap: () => _seek(10),
+            child: const SizedBox.expand(),
+          ),
+        ),
+
+        // ── Центральная зона — только тап ──
+        Positioned(
+          left: MediaQuery.of(context).size.width * 0.35,
+          right: MediaQuery.of(context).size.width * 0.35,
+          top: 0, bottom: 0,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _onTapScreen,
+            child: const SizedBox.expand(),
+          ),
+        ),
+
+        // ── Индикаторы двойного тапа ──
+        if (_seekSide != 0)
+          Positioned(
+            left: _seekSide < 0 ? 20 : null,
+            right: _seekSide > 0 ? 20 : null,
+            top: 0, bottom: 0,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _seekSide < 0 ? Icons.fast_rewind : Icons.fast_forward,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(_seekLabel,
+                        style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+        // ── Слой контролов (fade) ──
+        FadeTransition(
+          opacity: _fadeAnim,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Градиент сверху (кнопка назад)
+              Positioned(
+                top: 0, left: 0, right: 0,
+                child: Container(
+                  height: 80,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.black54, Colors.transparent],
+                    ),
+                  ),
+                ),
+              ),
+
+              // Градиент снизу (контролы)
+              Positioned(
+                bottom: 0, left: 0, right: 0,
+                child: Container(
+                  height: 140,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [Colors.black87, Colors.transparent],
+                    ),
+                  ),
+                ),
+              ),
+
+              // Кнопка «назад» сверху
+              Positioned(
+                top: 0, left: 0, right: 0,
+                child: SafeArea(
                   child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Row(
                       children: [
-                        const Icon(Icons.error_outline, color: Colors.red, size: 48),
-                        const SizedBox(height: 8),
-                        Text(
-                          _error!,
-                          style: const TextStyle(color: Colors.white54, fontSize: 12),
-                          textAlign: TextAlign.center,
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back, color: Colors.white),
+                          onPressed: () => Navigator.pop(context),
                         ),
                       ],
                     ),
                   ),
-                )
-              : Center(
-                  child: AspectRatio(
-                    aspectRatio: _controller!.value.aspectRatio,
-                    child: Stack(
-                      alignment: Alignment.center,
+                ),
+              ),
+
+              // Центральный play/pause
+              Center(
+                child: GestureDetector(
+                  onTap: _togglePlayPause,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.black45,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white30, width: 1.5),
+                    ),
+                    child: Icon(
+                      isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      color: Colors.white,
+                      size: 44,
+                    ),
+                  ),
+                ),
+              ),
+
+              // Нижняя панель: кнопки + слайдер
+              Positioned(
+                bottom: 0, left: 0, right: 0,
+                child: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        VideoPlayer(_controller!),
-
-                        // Прозрачный слой поверх VideoPlayer для перехвата тапов
-                        // (PlatformView на Android поглощает события иначе)
-                        Positioned.fill(
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () {
-                              if (_controller!.value.isPlaying) {
-                                _controller!.pause();
-                              } else {
-                                _controller!.play();
-                              }
-                              setState(() {});
-                            },
-                            child: Container(color: Colors.transparent),
-                          ),
+                        // Строка: -10 | play | +10 | время
+                        Row(
+                          children: [
+                            // Назад 10с
+                            _SeekBtn(
+                              icon: Icons.replay_10_rounded,
+                              onTap: () => _seek(-10),
+                            ),
+                            const SizedBox(width: 4),
+                            // Play/Pause
+                            _SeekBtn(
+                              icon: isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                              size: 28,
+                              onTap: _togglePlayPause,
+                            ),
+                            const SizedBox(width: 4),
+                            // Вперёд 10с
+                            _SeekBtn(
+                              icon: Icons.forward_10_rounded,
+                              onTap: () => _seek(10),
+                            ),
+                            const SizedBox(width: 10),
+                            // Время
+                            Text(
+                              '${_fmt(position)} / ${_fmt(duration)}',
+                              style: const TextStyle(color: Colors.white70, fontSize: 12),
+                            ),
+                          ],
                         ),
-
-                        // Иконка паузы — показывается когда остановлено
-                        if (!_controller!.value.isPlaying)
-                          IgnorePointer(
-                            child: Container(
-                              decoration: const BoxDecoration(
-                                color: Colors.black45,
-                                shape: BoxShape.circle,
-                              ),
-                              padding: const EdgeInsets.all(12),
-                              child: const Icon(
-                                Icons.play_arrow,
-                                color: Colors.white,
-                                size: 48,
-                              ),
-                            ),
+                        // Слайдер прогресса
+                        SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 3,
+                            activeTrackColor: Colors.white,
+                            inactiveTrackColor: Colors.white24,
+                            thumbColor: Colors.white,
+                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                            overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                            overlayColor: Colors.white24,
                           ),
-
-                        // Прогресс-бар внизу
-                        Positioned(
-                          bottom: 0,
-                          left: 0,
-                          right: 0,
-                          child: VideoProgressIndicator(
-                            _controller!,
-                            allowScrubbing: true,
-                            colors: const VideoProgressColors(
-                              playedColor: Colors.white,
-                              bufferedColor: Colors.white30,
-                              backgroundColor: Colors.white12,
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Slider(
+                            value: position.inMilliseconds.clamp(0, maxMs).toDouble(),
+                            max: maxMs.toDouble(),
+                            onChangeStart: (_) {
+                              _isDragging = true;
+                              _hideTimer?.cancel();
+                            },
+                            onChanged: (v) {
+                              setState(() {});
+                              _ctrl!.seekTo(Duration(milliseconds: v.toInt()));
+                            },
+                            onChangeEnd: (v) {
+                              _isDragging = false;
+                              if (isPlaying) _scheduleHide();
+                            },
                           ),
                         ),
                       ],
                     ),
                   ),
                 ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
+
+// Маленькая кнопка управления
+class _SeekBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final double size;
+
+  const _SeekBtn({required this.icon, required this.onTap, this.size = 24});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Icon(icon, color: Colors.white, size: size),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// АУДИО-ПЛЕЕР (полноэкранный)
+// ─────────────────────────────────────────────
 
 class _AudioPlayerScreen extends StatefulWidget {
   final String audioUrl;
