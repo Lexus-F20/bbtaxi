@@ -126,6 +126,8 @@ async function initDatabase() {
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS conversation_id INTEGER REFERENCES conversations(id);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+      ALTER TABLE markers ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMP;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS attached_marker_id INTEGER REFERENCES markers(id);
     `);
 
     // Создать администратора по умолчанию если нет пользователей

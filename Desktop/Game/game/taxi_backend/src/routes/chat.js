@@ -18,10 +18,14 @@ router.get('/global', async (req, res) => {
     const offset = parseInt(req.query.offset) || 0;
 
     const result = await pool.query(
-      `SELECT m.id, m.text, m.media_url, m.created_at, m.is_read, m.edited_at, m.is_deleted, m.forwarded_from_id,
+      `SELECT m.id, m.text, m.media_url, m.created_at, m.is_read, m.edited_at, m.is_deleted,
+              m.forwarded_from_id, m.attached_marker_id,
+              mk.title AS attached_marker_title, mk.status AS attached_marker_status,
+              mk.latitude AS attached_marker_lat, mk.longitude AS attached_marker_lng,
               u.id AS sender_id, u.name AS sender_name, u.role AS sender_role, u.avatar_url AS sender_avatar_url
        FROM messages m
        LEFT JOIN users u ON m.sender_id = u.id
+       LEFT JOIN markers mk ON m.attached_marker_id = mk.id
        WHERE m.receiver_id IS NULL AND m.conversation_id IS NULL
        ORDER BY m.created_at DESC
        LIMIT $1 OFFSET $2`,
@@ -46,18 +50,20 @@ router.get('/global', async (req, res) => {
  */
 router.post('/global', async (req, res) => {
   try {
-    const { text, media_url } = req.body;
+    const { text, media_url, attached_marker_id } = req.body;
     const senderId = req.user.id;
 
-    if ((!text || text.trim() === '') && !media_url) {
-      return res.status(400).json({ error: 'Текст или медиафайл обязательны' });
+    if ((!text || text.trim() === '') && !media_url && !attached_marker_id) {
+      return res.status(400).json({ error: 'Текст, медиафайл или маркер обязательны' });
     }
 
+    const markerId = attached_marker_id ? parseInt(attached_marker_id) : null;
+
     const result = await pool.query(
-      `INSERT INTO messages (sender_id, receiver_id, text, media_url)
-       VALUES ($1, NULL, $2, $3)
-       RETURNING id, sender_id, text, media_url, is_read, created_at`,
-      [senderId, (text || '').trim(), media_url || null]
+      `INSERT INTO messages (sender_id, receiver_id, text, media_url, attached_marker_id)
+       VALUES ($1, NULL, $2, $3, $4)
+       RETURNING id, sender_id, text, media_url, is_read, created_at, attached_marker_id`,
+      [senderId, (text || '').trim(), media_url || null, markerId]
     );
 
     const message = result.rows[0];
@@ -69,11 +75,25 @@ router.post('/global', async (req, res) => {
     );
     const sender = userResult.rows[0];
 
+    // Если прикреплён маркер — получаем его данные
+    let attachedMarker = null;
+    if (markerId) {
+      const mkResult = await pool.query(
+        'SELECT title, status, latitude, longitude FROM markers WHERE id = $1',
+        [markerId]
+      );
+      if (mkResult.rows.length > 0) attachedMarker = mkResult.rows[0];
+    }
+
     const fullMessage = {
       ...message,
       sender_name: sender?.name,
       sender_role: sender?.role,
       sender_avatar_url: sender?.avatar_url || null,
+      attached_marker_title: attachedMarker?.title || null,
+      attached_marker_status: attachedMarker?.status || null,
+      attached_marker_lat: attachedMarker?.latitude || null,
+      attached_marker_lng: attachedMarker?.longitude || null,
     };
 
     // Рассылаем всем подключённым через Socket.io

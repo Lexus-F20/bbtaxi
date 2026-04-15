@@ -104,7 +104,7 @@ router.get('/', async (req, res) => {
     let query = `
       SELECT m.id, m.latitude, m.longitude, m.title, m.description,
              m.color, m.status, m.reject_reason, m.report, m.done_at, m.created_at,
-             m.media_urls,
+             m.media_urls, m.confirmed_at,
              u.id AS user_id, u.name AS user_name,
              a.id AS accepted_by, a.name AS accepted_by_name
       FROM markers m
@@ -219,7 +219,7 @@ router.get('/:id', async (req, res) => {
     const result = await pool.query(
       `SELECT m.id, m.user_id, m.latitude, m.longitude, m.title, m.description,
               m.color, m.status, m.reject_reason, m.report, m.done_at, m.created_at,
-              m.media_urls, u.name AS user_name,
+              m.media_urls, m.confirmed_at, u.name AS user_name,
               a.id AS accepted_by, a.name AS accepted_by_name
        FROM markers m
        LEFT JOIN users u ON m.user_id = u.id
@@ -233,6 +233,43 @@ router.get('/:id', async (req, res) => {
     return res.json({ marker: result.rows[0] });
   } catch (error) {
     console.error('Ошибка получения маркера:', error);
+    return res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// ========== ПОДТВЕРДИТЬ АКТУАЛЬНОСТЬ МАРКЕРА ==========
+
+/**
+ * PUT /markers/:id/confirm
+ * Подтвердить что маркер актуален (кнопка раз в день).
+ * Только автор маркера или admin.
+ */
+router.put('/:id/confirm', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    const markerResult = await pool.query('SELECT user_id, title FROM markers WHERE id = $1', [id]);
+    if (markerResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Маркер не найден' });
+    }
+    const marker = markerResult.rows[0];
+    if (String(marker.user_id) !== String(userId) && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Только автор или администратор может подтвердить актуальность' });
+    }
+
+    const result = await pool.query(
+      `UPDATE markers SET confirmed_at = NOW() WHERE id = $1
+       RETURNING id, confirmed_at`,
+      [id]
+    );
+
+    const io = req.app.locals.io;
+    io.emit('marker:confirmed', { id: parseInt(id), confirmed_at: result.rows[0].confirmed_at });
+
+    return res.json({ confirmed_at: result.rows[0].confirmed_at });
+  } catch (error) {
+    console.error('Ошибка подтверждения маркера:', error);
     return res.status(500).json({ error: 'Внутренняя ошибка сервера' });
   }
 });
